@@ -22,10 +22,10 @@ void task2_main(void *arg)
     }
 }
 
-int main(void)
+void __NO_RETURN main(void)
 {
-    add_task(task1_main, &task1, task1_stack, sizeof(task1_stack) / 4);
     add_task(task2_main, &task2, task2_stack, sizeof(task2_stack) / 4);
+    add_task(task1_main, &task1, task1_stack, sizeof(task1_stack) / 4);
     start_rtos();
     
     while(1)

@@ -140,7 +140,7 @@ __ASM void Yield_IRQHandler(void)
      *    R9
      *    R8
      */
-    mrs r0, PSP
+    mrs r0, psp
     subs r0, r0, #16
     stmia r0!, {r4-r7}
     mov r4, r8
@@ -173,6 +173,7 @@ __NO_RETURN void idle_task_function(void *arg)
     while (1)
     {
         /* spin */
+        yield_from_task();
     }
 }
 
@@ -180,20 +181,15 @@ __ASM void start_idle_task(uint32_t *idle_sp)
 {
     PRESERVE8
     IMPORT idle_task_function
-    //IMPORT __INITIAL_SP
 
-    /* Reset the main stack register to its original value */
-    //ldr r1, =__INITIAL_SP
-    //mov sp, r1
-    /* Set stack register for task code to be PSP */
+    /* Set task code to use the Process stack */
     movs r1, #2
-    msr CONTROL, r1
-    //movs r1, r0         /* idle_sp */
+    msr control, r1
     mov sp, r0
     bl idle_task_function
 }
 
-int start_rtos(void)
+void __NO_RETURN start_rtos(void)
 {
     __disable_irq();
     
@@ -213,5 +209,8 @@ int start_rtos(void)
     start_idle_task(idle_task.sp);
     
     /* Should never get here */
-    return 0;
+    while(1)
+    {
+        /* Spin */
+    }
 }
