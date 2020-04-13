@@ -336,7 +336,7 @@
             <v6Rtti>0</v6Rtti>
             <VariousControls>
               <MiscControls></MiscControls>
-              <Define></Define>
+              <Define>USE_FULL_LL_DRIVER</Define>
               <Undefine></Undefine>
               <IncludePath></IncludePath>
             </VariousControls>
@@ -391,18 +391,6 @@
         </Group>
         <Group>
           <GroupName>Chip</GroupName>
-          <Files>
-            <File>
-              <FileName>startup_stm32l031xx.s</FileName>
-              <FileType>2</FileType>
-              <FilePath>..\startup_stm32l031xx.s</FilePath>
-            </File>
-            <File>
-              <FileName>system_stm32l0xx.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\system_stm32l0xx.c</FilePath>
-            </File>
-          </Files>
         </Group>
         <Group>
           <GroupName>RTOS</GroupName>
@@ -427,6 +415,9 @@
         <Group>
           <GroupName>::CMSIS</GroupName>
         </Group>
+        <Group>
+          <GroupName>::Device</GroupName>
+        </Group>
       </Groups>
     </Target>
   </Targets>
@@ -440,8 +431,55 @@
           <targetInfo name="Target 1"/>
         </targetInfos>
       </component>
+      <component Cbundle="Standalone" Cclass="Device" Cgroup="STM32Cube LL" Csub="COMMON" Cvendor="Keil" Cversion="1.10.0" condition="STM32L0 STARTUP LL UTILS RCC PWR">
+        <package name="STM32L0xx_DFP" schemaVersion="1.2" url="http://www.keil.com/pack/" vendor="Keil" version="2.0.1"/>
+        <targetInfos>
+          <targetInfo name="Target 1"/>
+        </targetInfos>
+      </component>
+      <component Cbundle="Standalone" Cclass="Device" Cgroup="STM32Cube LL" Csub="PWR" Cvendor="Keil" Cversion="1.10.0" condition="STM32L0 LL">
+        <package name="STM32L0xx_DFP" schemaVersion="1.2" url="http://www.keil.com/pack/" vendor="Keil" version="2.0.1"/>
+        <targetInfos>
+          <targetInfo name="Target 1"/>
+        </targetInfos>
+      </component>
+      <component Cbundle="Standalone" Cclass="Device" Cgroup="STM32Cube LL" Csub="RCC" Cvendor="Keil" Cversion="1.10.0" condition="STM32L0 LL">
+        <package name="STM32L0xx_DFP" schemaVersion="1.2" url="http://www.keil.com/pack/" vendor="Keil" version="2.0.1"/>
+        <targetInfos>
+          <targetInfo name="Target 1"/>
+        </targetInfos>
+      </component>
+      <component Cbundle="Standalone" Cclass="Device" Cgroup="STM32Cube LL" Csub="UTILS" Cvendor="Keil" Cversion="1.10.0" condition="STM32L0 LL">
+        <package name="STM32L0xx_DFP" schemaVersion="1.2" url="http://www.keil.com/pack/" vendor="Keil" version="2.0.1"/>
+        <targetInfos>
+          <targetInfo name="Target 1"/>
+        </targetInfos>
+      </component>
+      <component Cbundle="Standalone" Cclass="Device" Cgroup="Startup" Cvendor="Keil" Cversion="1.0.0" condition="STM32L0 CMSIS">
+        <package name="STM32L0xx_DFP" schemaVersion="1.2" url="http://www.keil.com/pack/" vendor="Keil" version="2.0.1"/>
+        <targetInfos>
+          <targetInfo name="Target 1"/>
+        </targetInfos>
+      </component>
     </components>
-    <files/>
+    <files>
+      <file attr="config" category="source" condition="STM32L031 ARMCC" name="Drivers\CMSIS\Device\ST\STM32L0xx\Source\Templates\arm\startup_stm32l031xx.s" version="2.3.3">
+        <instance index="0">RTE\Device\STM32L031G6Ux\startup_stm32l031xx.s</instance>
+        <component Cbundle="Standalone" Cclass="Device" Cgroup="Startup" Cvendor="Keil" Cversion="1.0.0" condition="STM32L0 CMSIS"/>
+        <package name="STM32L0xx_DFP" schemaVersion="1.2" url="http://www.keil.com/pack/" vendor="Keil" version="2.0.1"/>
+        <targetInfos>
+          <targetInfo name="Target 1"/>
+        </targetInfos>
+      </file>
+      <file attr="config" category="source" name="Drivers\CMSIS\Device\ST\STM32L0xx\Source\Templates\system_stm32l0xx.c" version="2.3.3">
+        <instance index="0">RTE\Device\STM32L031G6Ux\system_stm32l0xx.c</instance>
+        <component Cbundle="Standalone" Cclass="Device" Cgroup="Startup" Cvendor="Keil" Cversion="1.0.0" condition="STM32L0 CMSIS"/>
+        <package name="STM32L0xx_DFP" schemaVersion="1.2" url="http://www.keil.com/pack/" vendor="Keil" version="2.0.1"/>
+        <targetInfos>
+          <targetInfo name="Target 1"/>
+        </targetInfos>
+      </file>
+    </files>
   </RTE>
 
 </Project>
