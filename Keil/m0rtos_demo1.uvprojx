@@ -387,6 +387,16 @@
               <FileType>1</FileType>
               <FilePath>..\main.c</FilePath>
             </File>
+            <File>
+              <FileName>util.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\util.h</FilePath>
+            </File>
+            <File>
+              <FileName>printf.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\printf.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -437,6 +447,18 @@
           <targetInfo name="Target 1"/>
         </targetInfos>
       </component>
+      <component Cbundle="Standalone" Cclass="Device" Cgroup="STM32Cube LL" Csub="GPIO" Cvendor="Keil" Cversion="1.10.0" condition="STM32L0 LL">
+        <package name="STM32L0xx_DFP" schemaVersion="1.2" url="http://www.keil.com/pack/" vendor="Keil" version="2.0.1"/>
+        <targetInfos>
+          <targetInfo name="Target 1"/>
+        </targetInfos>
+      </component>
+      <component Cbundle="Standalone" Cclass="Device" Cgroup="STM32Cube LL" Csub="LPUART" Cvendor="Keil" Cversion="1.10.0" condition="STM32L0 LL">
+        <package name="STM32L0xx_DFP" schemaVersion="1.2" url="http://www.keil.com/pack/" vendor="Keil" version="2.0.1"/>
+        <targetInfos>
+          <targetInfo name="Target 1"/>
+        </targetInfos>
+      </component>
       <component Cbundle="Standalone" Cclass="Device" Cgroup="STM32Cube LL" Csub="PWR" Cvendor="Keil" Cversion="1.10.0" condition="STM32L0 LL">
         <package name="STM32L0xx_DFP" schemaVersion="1.2" url="http://www.keil.com/pack/" vendor="Keil" version="2.0.1"/>
         <targetInfos>
@@ -444,6 +466,12 @@
         </targetInfos>
       </component>
       <component Cbundle="Standalone" Cclass="Device" Cgroup="STM32Cube LL" Csub="RCC" Cvendor="Keil" Cversion="1.10.0" condition="STM32L0 LL">
+        <package name="STM32L0xx_DFP" schemaVersion="1.2" url="http://www.keil.com/pack/" vendor="Keil" version="2.0.1"/>
+        <targetInfos>
+          <targetInfo name="Target 1"/>
+        </targetInfos>
+      </component>
+      <component Cbundle="Standalone" Cclass="Device" Cgroup="STM32Cube LL" Csub="USART" Cvendor="Keil" Cversion="1.10.0" condition="STM32L0 LL">
         <package name="STM32L0xx_DFP" schemaVersion="1.2" url="http://www.keil.com/pack/" vendor="Keil" version="2.0.1"/>
         <targetInfos>
           <targetInfo name="Target 1"/>
