@@ -10,10 +10,14 @@ volatile uint32_t ticks;
 
 static task_t *task_list      = NULL;
 static task_t *running_list   = NULL;
-//static task_t *suspended_list = NULL;
+static task_t *suspended_list = NULL;
+static task_t *running_task   = NULL;
 
 static uint32_t enabled_irqs1, enabled_irqs2;
 static int nesting = 0;
+
+static uint32_t idle_task_stack[48] __ALIGNED(8);
+static task_t idle_task;
 
 /*
  * Enter critical section in task context
@@ -25,11 +29,13 @@ void enter_critical(void)
 {
     if (nesting == 0)
     {
+        __disable_irq();
         /* Remember which IRQs were enabled */
         enabled_irqs1 = NVIC->ICER[0];
         /* Disable all interrupts except the realtime ones */
         NVIC->ICER[0] = ~REALTIME_IRQS;
         SysTick->CTRL &= ~SysTick_CTRL_ENABLE_Msk;
+        __enable_irq();
     }
     ++nesting;
 }
@@ -43,23 +49,26 @@ void exit_critical(void)
     --nesting;
     if (nesting == 0)
     {
+        __disable_irq();
         NVIC->ISER[0] |= enabled_irqs1;
         SysTick->CTRL |= SysTick_CTRL_ENABLE_Msk;
+        __enable_irq();
     }
 }
 
 /*
  * Enter critical section in IRQ context - prevent all interrupts below realtime priority
- * No need to disable SysTick or the Yield interrupt as they have the lowest priority.
+ * No need to disable SysTick as it has the lowest IRQ priority.
  * Calls to this function cannot be nested
  */
 void enter_critical_irq(void)
 {
+    __disable_irq();
     /* Remember which IRQs were enabled */
     enabled_irqs2 = NVIC->ICER[0];
-    /* TODO: what if we get an interrupt here, and change NVIC->ICER? */
     /* Disable all interrupts except the realtime ones */
     NVIC->ICER[0] = ~REALTIME_IRQS;
+    __enable_irq();
 }
 
 /*
@@ -68,7 +77,9 @@ void enter_critical_irq(void)
  */
 void exit_critical_irq(void)
 {
+    __disable_irq();
     NVIC->ISER[0] |= enabled_irqs2;
+    __enable_irq();
 }
 
 
@@ -105,14 +116,30 @@ int add_task(task_function_t *task_function, task_t *task, uint32_t *stack, unsi
 {
     task->sp = create_task_stack(task_function, stack, stack_words);
     task->stack = stack;
+    task->stack_words = stack_words;
     task->next_suspended = NULL;
     task->next_running = running_list;
     running_list = task;
-    task->next = task_list;
+    task->next_task = task_list;
     task_list = task;
     return 0;
 }
 
+void sleep(uint32_t ticks_to_sleep)
+{
+    task_t *this;
+
+    /* Block interrupts and move this task to the suspended list */
+    enter_critical();
+    this = running_task;
+    this->wait_until = ticks + ticks_to_sleep;
+    running_list = running_list->next_running;
+    this->next_suspended = suspended_list;
+    suspended_list = this;
+    yield_from_task();
+    exit_critical();
+}
+    
 void yield_from_task(void)
 {
     NVIC->ISPR[0] = YIELD_BIT;
@@ -120,10 +147,10 @@ void yield_from_task(void)
 
 uint32_t *choose_next_task(uint32_t *current_sp)
 {
-    task_t *temp, *insert_point;
+    task_t *temp, *prev, *insert_point;
     
-    /* Save the outgoing tasks stack pointer so we can restore it later */
-    running_list->sp = current_sp;
+    /* Save the outgoing task's stack pointer */
+    running_task->sp = current_sp;
     
     /* round robin to next task */
     temp = running_list;
@@ -143,9 +170,36 @@ uint32_t *choose_next_task(uint32_t *current_sp)
         }
         insert_point->next_running = temp;
     }
-    
-    /* Return saved stack pointer */
-    return running_list->sp;
+
+    /* Check suspended list for tasks that need to wake up from sleep */
+    if (suspended_list != NULL)
+    {
+        prev = NULL;
+        for (temp = suspended_list; temp; temp = temp->next_suspended, prev = temp)
+        {
+            /* Is this task ready to wake? */
+            if ((int32_t)(temp->wait_until - ticks) <= 0)
+            {
+                /* Remove from suspended list */
+                if (prev == NULL)
+                {
+                    suspended_list = suspended_list->next_suspended;
+                }
+                else
+                {
+                    prev->next_suspended = temp->next_suspended;
+                    temp->next_suspended = NULL;                        // TODO: Bug - ends for loop
+                }
+                /* Add to running list */
+                temp->next_running = running_list;
+                running_list = temp;
+            }
+        }
+    }
+
+    /* Return incoming task's stack pointer */
+    running_task = running_list;
+    return running_task->sp;
 }
 
 __ASM void Yield_IRQHandler(void)
@@ -211,10 +265,9 @@ void SysTick_Handler(void)
     ++ticks;
 }
 
-static uint32_t idle_task_stack[48] __ALIGNED(8);
-static task_t idle_task;
 __NO_RETURN void idle_task_function(void *arg)
 {
+    running_task = &idle_task;
     __enable_irq();
     
     while (1)

@@ -22,13 +22,12 @@ void task1_main(void *arg)
 {
     while(1)
     {
-        enter_critical();
-        exit_critical();
+        sleep(1000);
         for (volatile unsigned i = 0; i < 100000; ++i)
         {
             /* spin */
         }
-        dprintf("1");
+        dprintf("_");
         yield_from_task();
     }
 }

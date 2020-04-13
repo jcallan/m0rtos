@@ -6,10 +6,13 @@
 
 struct task_s
 {
-    struct task_s *next;
+    struct task_s *next_task;
     struct task_s *next_running;
     struct task_s *next_suspended;
-    uint32_t *stack, *sp;
+    uint32_t *stack;
+    uint32_t *sp;
+    unsigned stack_words;
+    uint32_t wait_until;
 };
 
 typedef struct task_s task_t;
@@ -19,6 +22,7 @@ typedef void (task_function_t)(void *);
 extern void enter_critical(void);
 extern void exit_critical(void);
 
+extern void sleep(uint32_t ticks_to_sleep);
 extern int add_task(task_function_t *task_function, task_t *task, uint32_t *stack, unsigned stack_words);
 extern __NO_RETURN void start_rtos(uint32_t cpu_clocks_per_tick);
 extern void yield_from_task(void);
