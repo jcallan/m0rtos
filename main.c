@@ -14,20 +14,22 @@
 #define GET_LPUART_BRR_VALUE(UART_CLOCK, BAUDRATE)  (((UART_CLOCK * 16) + (BAUDRATE / 32)) / (BAUDRATE / 16))
 #define GET_USART_BRR_VALUE(UART_CLOCK, BAUDRATE)   (((UART_CLOCK) + (BAUDRATE / 2)) / (BAUDRATE))
 
-task_t task1, task2;
+task_t task1, task2, task3, task4;
 uint32_t task1_stack[64] __ALIGNED(8);
 uint32_t task2_stack[64] __ALIGNED(8);
+uint32_t task3_stack[64] __ALIGNED(8);
+uint32_t task4_stack[64] __ALIGNED(8);
 
 
 void task1_main(void *arg)
 {
+    uint32_t tick_target;
+    
+    tick_target = ticks;
     while(1)
     {
-        sleep(10);
-        for (volatile unsigned i = 0; i < 100000; ++i)
-        {
-            /* spin */
-        }
+        tick_target += 1000;
+        sleep_until(tick_target);
         dprintf("_");
     }
 }
@@ -42,6 +44,31 @@ void task2_main(void *arg)
         }
         sleep(1);
         dprintf("2");
+    }
+}
+
+void task3_main(void *arg)
+{
+    while(1)
+    {
+        for (volatile unsigned i = 0; i < 10000; ++i)
+        {
+            /* spin */
+        }
+        sleep(1);
+        dprintf("3");
+    }
+}
+
+void task4_main(void *arg)
+{
+    while(1)
+    {
+        for (volatile unsigned i = 0; i < 10000; ++i)
+        {
+            /* spin */
+        }
+        dprintf("4");
     }
 }
 
@@ -137,7 +164,9 @@ void __NO_RETURN main(void)
     //init_usart2();
     dprintf("Hello world!\n");
 
-    add_task(task2_main, &task2, task2_stack, sizeof(task2_stack) / 4, 0);
+    add_task(task4_main, &task4, task4_stack, sizeof(task4_stack) / 4, 2);
+    add_task(task3_main, &task3, task3_stack, sizeof(task3_stack) / 4, 2);
+    add_task(task2_main, &task2, task2_stack, sizeof(task2_stack) / 4, 1);
     add_task(task1_main, &task1, task1_stack, sizeof(task1_stack) / 4, 0);
     
     init_lptim(32000);

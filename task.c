@@ -127,20 +127,25 @@ int add_task(task_function_t *task_function, task_t *task, uint32_t *stack, unsi
     return 0;
 }
 
-void sleep(uint32_t ticks_to_sleep)
+void sleep_until(uint32_t target_ticks)
 {
     unsigned p;
     
     /* Block interrupts and move this task to the suspended list */
     enter_critical();
     running_task->flags |= TASK_SLEEPING;
-    running_task->wait_until = ticks + ticks_to_sleep;
+    running_task->wait_until = target_ticks;
     p = running_task->priority;
     runnable_list[p] = runnable_list[p]->next_runnable;
     running_task->next_suspended = suspended_list;
     suspended_list = running_task;
     yield();
     exit_critical();
+}
+
+void sleep(uint32_t ticks_to_sleep)
+{
+    sleep_until(ticks + ticks_to_sleep);
 }
 
 void tick(void)
