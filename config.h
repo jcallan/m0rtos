@@ -15,3 +15,5 @@
 #define HIGH_IRQ_PRIO       0u
 
 #define REALTIME_IRQS       0x04000000
+
+#define NUM_TASK_PRIOS      4

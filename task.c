@@ -1,17 +1,23 @@
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include "stm32l031xx.h" 
 #include "config.h"
 #include "task.h"
 
 #define INITIAL_REGISTER_VALUE  0xdeadbeef
 
+/* Flags for the state of a task */
+#define TASK_RUNNABLE   0
+#define TASK_SLEEPING   1
+#define TASK_BLOCKED    2
+
 volatile uint32_t ticks;
 
-static task_t *task_list      = NULL;
-static task_t *running_list   = NULL;
-static task_t *suspended_list = NULL;
-static task_t *running_task   = NULL;
+static task_t *task_list                    = NULL;
+static task_t *running_list[NUM_TASK_PRIOS] = {NULL};
+static task_t *suspended_list               = NULL;
+static task_t *running_task                 = NULL;
 
 uint32_t enabled_irqs;
 int nesting = 0;
@@ -105,34 +111,70 @@ static uint32_t *create_task_stack(task_function_t *task_function, uint32_t *sta
  * Tasks are added in the running state.
  * stack must be 8 byte aligned
  */
-int add_task(task_function_t *task_function, task_t *task, uint32_t *stack, unsigned stack_words)
+int add_task(task_function_t *task_function, task_t *task, uint32_t *stack, unsigned stack_words,
+             unsigned priority)
 {
-    task->sp = create_task_stack(task_function, stack, stack_words);
-    task->stack = stack;
-    task->stack_words = stack_words;
+    task->sp             = create_task_stack(task_function, stack, stack_words);
+    task->stack          = stack;
+    task->stack_words    = stack_words;
+    task->priority       = priority;
+    task->flags          = TASK_RUNNABLE;
     task->next_suspended = NULL;
-    task->next_running = running_list;
-    running_list = task;
-    task->next_task = task_list;
-    task_list = task;
+    task->next_task      = task_list;
+    task->next_running   = running_list[priority];
+    task_list              = task;
+    running_list[priority] = task;
     return 0;
 }
 
 void sleep(uint32_t ticks_to_sleep)
 {
-    task_t *this;
-
+    unsigned p;
+    
     /* Block interrupts and move this task to the suspended list */
     enter_critical();
-    this = running_task;
-    this->wait_until = ticks + ticks_to_sleep;
-    running_list = running_list->next_running;
-    this->next_suspended = suspended_list;
-    suspended_list = this;
+    running_task->flags |= TASK_SLEEPING;
+    running_task->wait_until = ticks + ticks_to_sleep;
+    p = running_task->priority;
+    running_list[p] = running_list[p]->next_running;
+    running_task->next_suspended = suspended_list;
+    suspended_list = running_task;
     yield();
     exit_critical();
 }
-    
+
+void tick(void)
+{
+    bool need_yield = false;
+    task_t *temp;
+
+    ++ticks;
+
+    /* Is there another task ready to run at this priority? */
+    if (running_task->next_running)
+    {
+        need_yield = true;
+    }
+    else
+    {
+        /* Or has a task woken from sleep? */
+        for (temp = suspended_list; temp; temp = temp->next_suspended)
+        {
+            /* Is this task ready to wake? */
+            if ((temp->flags & TASK_SLEEPING) && (int32_t)(temp->wait_until - ticks) <= 0)
+            {
+                need_yield = true;
+                break;
+            }
+        }
+    }
+                
+    if (need_yield)
+    {
+        yield();
+    }
+}
+
 void yield(void)
 {
     NVIC->ISPR[0] = YIELD_BIT;
@@ -140,58 +182,76 @@ void yield(void)
 
 uint32_t *choose_next_task(uint32_t *current_sp)
 {
-    task_t *temp, *prev, *insert_point;
+    unsigned p;
+    task_t *task, **pprev, *insert_point;
     
     /* Save the outgoing task's stack pointer */
     running_task->sp = current_sp;
     
-    /* round robin to next task */
-    temp = running_list;
-    running_list = temp->next_running;
-    if (running_list == NULL)
+    /* Find highest priority running task */
+    for (p = 0; p < NUM_TASK_PRIOS; ++p)
     {
-        running_list = temp;
-    }
-    else
-    {
-        /* Add on temp at the end */
-        temp->next_running = NULL;
-        insert_point = running_list;
-        while (insert_point->next_running != NULL)
+        if (running_list[p] == NULL)
         {
-            insert_point = insert_point->next_running;
+            /* Check next lowest priority task list */
+            continue;
         }
-        insert_point->next_running = temp;
+        if (running_list[p] == running_task)
+        {
+            /* Current task still runnable, round robin to next task if there is one */
+            task = running_list[p];
+            running_list[p] = task->next_running;
+            if (running_list[p] == NULL)
+            {
+                /* No next task, keep running this one */
+                running_list[p] = task;
+            }
+            else
+            {
+                /* Add on task at the end */
+                task->next_running = NULL;
+                insert_point = running_list[p];
+                while (insert_point->next_running != NULL)
+                {
+                    insert_point = insert_point->next_running;
+                }
+                insert_point->next_running = task;
+            }
+            running_task = running_list[p];
+            break;
+        }
+        running_task = running_list[p];
+        break;
     }
 
-    /* Check suspended list for tasks that need to wake up from sleep */
-    if (suspended_list != NULL)
+    /* Check suspended list for tasks that need to wake up from sleep or being blocked */
+    pprev = &suspended_list;
+    for (task = suspended_list; task; task = task->next_suspended)
     {
-        prev = NULL;
-        for (temp = suspended_list; temp; temp = temp->next_suspended, prev = temp)
+        /* Is this task ready to wake/unblock? */
+        if (  ((task->flags & TASK_SLEEPING) && ((int32_t)(task->wait_until - ticks) <= 0))
+           || ((task->flags & TASK_BLOCKED)  && (task->wait_for == NULL)))
         {
-            /* Is this task ready to wake? */
-            if ((int32_t)(temp->wait_until - ticks) <= 0)
+            /* Remove this task from the suspended list - update previous next_suspended value */
+            *pprev = task->next_suspended;
+            /* Add to the relevant running list */
+            task->flags = TASK_RUNNABLE;
+            task->next_running = running_list[task->priority];
+            running_list[task->priority] = task;
+            /* Check if we should actually be running this task */
+            if (task->priority <= running_task->priority)
             {
-                /* Remove from suspended list */
-                if (prev == NULL)
-                {
-                    suspended_list = suspended_list->next_suspended;
-                }
-                else
-                {
-                    prev->next_suspended = temp->next_suspended;
-                    temp->next_suspended = NULL;                        // TODO: Bug - ends for loop
-                }
-                /* Add to running list */
-                temp->next_running = running_list;
-                running_list = temp;
+                running_task = task;
             }
+        }
+        else
+        {
+            /* This task stays on the suspended list, update pprev */
+            pprev = &task->next_suspended;
         }
     }
 
     /* Return incoming task's stack pointer */
-    running_task = running_list;
     return running_task->sp;
 }
 
@@ -281,7 +341,8 @@ void __NO_RETURN start_rtos(uint32_t cpu_clocks_per_tick)
     __disable_irq();
     
     /* Create the idle task */
-    add_task(idle_task_function, &idle_task, idle_task_stack, sizeof(idle_task_stack) / 4);
+    add_task(idle_task_function, &idle_task, idle_task_stack, sizeof(idle_task_stack) / 4,
+             NUM_TASK_PRIOS - 1);
     /* The idle task starts with an empty stack, as we call it directly */
     idle_task.sp = idle_task_stack + sizeof(idle_task_stack) / 4;
 

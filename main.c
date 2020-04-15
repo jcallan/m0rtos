@@ -8,6 +8,7 @@
 #include "stm32l0xx_ll_usart.h"
 
 #include "util.h"
+#include "config.h"
 #include "task.h"
 
 #define GET_LPUART_BRR_VALUE(UART_CLOCK, BAUDRATE)  (((UART_CLOCK * 16) + (BAUDRATE / 32)) / (BAUDRATE / 16))
@@ -22,7 +23,7 @@ void task1_main(void *arg)
 {
     while(1)
     {
-        sleep(1000);
+        sleep(10);
         for (volatile unsigned i = 0; i < 100000; ++i)
         {
             /* spin */
@@ -39,6 +40,7 @@ void task2_main(void *arg)
         {
             /* spin */
         }
+        sleep(1);
         dprintf("2");
     }
 }
@@ -96,8 +98,7 @@ void init_lpusart1(void)
 void LPTIM1_IRQHandler(void)
 {
     LPTIM1->ICR = LPTIM_IER_ARRMIE;
-    ++ticks;
-    yield();
+    tick();
 }
 
 /*
@@ -136,8 +137,8 @@ void __NO_RETURN main(void)
     //init_usart2();
     dprintf("Hello world!\n");
 
-    add_task(task2_main, &task2, task2_stack, sizeof(task2_stack) / 4);
-    add_task(task1_main, &task1, task1_stack, sizeof(task1_stack) / 4);
+    add_task(task2_main, &task2, task2_stack, sizeof(task2_stack) / 4, 0);
+    add_task(task1_main, &task1, task1_stack, sizeof(task1_stack) / 4, 0);
     
     init_lptim(32000);
     start_rtos(32000);
