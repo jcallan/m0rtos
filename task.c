@@ -14,10 +14,10 @@
 
 volatile uint32_t ticks;
 
-static task_t *task_list                    = NULL;
-static task_t *running_list[NUM_TASK_PRIOS] = {NULL};
-static task_t *suspended_list               = NULL;
-static task_t *running_task                 = NULL;
+static task_t *task_list                     = NULL;
+static task_t *runnable_list[NUM_TASK_PRIOS] = {NULL};
+static task_t *suspended_list                = NULL;
+static task_t *running_task                  = NULL;
 
 uint32_t enabled_irqs;
 int nesting = 0;
@@ -108,7 +108,7 @@ static uint32_t *create_task_stack(task_function_t *task_function, uint32_t *sta
 
 /*
  * Add a new task
- * Tasks are added in the running state.
+ * Tasks are added in the runnable state.
  * stack must be 8 byte aligned
  */
 int add_task(task_function_t *task_function, task_t *task, uint32_t *stack, unsigned stack_words,
@@ -121,9 +121,9 @@ int add_task(task_function_t *task_function, task_t *task, uint32_t *stack, unsi
     task->flags          = TASK_RUNNABLE;
     task->next_suspended = NULL;
     task->next_task      = task_list;
-    task->next_running   = running_list[priority];
-    task_list              = task;
-    running_list[priority] = task;
+    task->next_runnable  = runnable_list[priority];
+    task_list               = task;
+    runnable_list[priority] = task;
     return 0;
 }
 
@@ -136,7 +136,7 @@ void sleep(uint32_t ticks_to_sleep)
     running_task->flags |= TASK_SLEEPING;
     running_task->wait_until = ticks + ticks_to_sleep;
     p = running_task->priority;
-    running_list[p] = running_list[p]->next_running;
+    runnable_list[p] = runnable_list[p]->next_runnable;
     running_task->next_suspended = suspended_list;
     suspended_list = running_task;
     yield();
@@ -151,7 +151,7 @@ void tick(void)
     ++ticks;
 
     /* Is there another task ready to run at this priority? */
-    if (running_task->next_running)
+    if (running_task->next_runnable)
     {
         need_yield = true;
     }
@@ -188,39 +188,37 @@ uint32_t *choose_next_task(uint32_t *current_sp)
     /* Save the outgoing task's stack pointer */
     running_task->sp = current_sp;
     
-    /* Find highest priority running task */
+    /* Find highest priority runnable task */
     for (p = 0; p < NUM_TASK_PRIOS; ++p)
     {
-        if (running_list[p] == NULL)
+        if (runnable_list[p] == NULL)
         {
             /* Check next lowest priority task list */
             continue;
         }
-        if (running_list[p] == running_task)
+        if (runnable_list[p] == running_task)
         {
             /* Current task still runnable, round robin to next task if there is one */
-            task = running_list[p];
-            running_list[p] = task->next_running;
-            if (running_list[p] == NULL)
+            task = runnable_list[p];
+            runnable_list[p] = task->next_runnable;
+            if (runnable_list[p] == NULL)
             {
                 /* No next task, keep running this one */
-                running_list[p] = task;
+                runnable_list[p] = task;
             }
             else
             {
                 /* Add on task at the end */
-                task->next_running = NULL;
-                insert_point = running_list[p];
-                while (insert_point->next_running != NULL)
+                task->next_runnable = NULL;
+                insert_point = runnable_list[p];
+                while (insert_point->next_runnable != NULL)
                 {
-                    insert_point = insert_point->next_running;
+                    insert_point = insert_point->next_runnable;
                 }
-                insert_point->next_running = task;
+                insert_point->next_runnable = task;
             }
-            running_task = running_list[p];
-            break;
         }
-        running_task = running_list[p];
+        running_task = runnable_list[p];
         break;
     }
 
@@ -234,10 +232,10 @@ uint32_t *choose_next_task(uint32_t *current_sp)
         {
             /* Remove this task from the suspended list - update previous next_suspended value */
             *pprev = task->next_suspended;
-            /* Add to the relevant running list */
+            /* Add to the correct runnable list */
             task->flags = TASK_RUNNABLE;
-            task->next_running = running_list[task->priority];
-            running_list[task->priority] = task;
+            task->next_runnable = runnable_list[task->priority];
+            runnable_list[task->priority] = task;
             /* Check if we should actually be running this task */
             if (task->priority <= running_task->priority)
             {

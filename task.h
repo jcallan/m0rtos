@@ -7,7 +7,7 @@
 struct task_s
 {
     struct task_s *next_task;
-    struct task_s *next_running;
+    struct task_s *next_runnable;
     struct task_s *next_suspended;
     uint32_t *stack;
     uint32_t *sp;
