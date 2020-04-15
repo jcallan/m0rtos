@@ -127,6 +127,91 @@ int add_task(task_function_t *task_function, task_t *task, uint32_t *stack, unsi
     return 0;
 }
 
+/*
+ * Wait for a semaphore
+ * ticks_to_wait special values: zero (don't wait), negative (wait forever)
+ */
+bool wait_semaphore(semaphore_t *sem, int ticks_to_wait)
+{
+    unsigned p;
+    bool got = false;
+    uint32_t target_ticks;
+
+    target_ticks = ticks + ticks_to_wait;
+    
+    while (true)
+    {
+        enter_critical();
+        
+        if (sem->value > 0)
+        {
+            --sem->value;
+            /* Success */
+            got = true;
+            exit_critical();
+            break;
+        }
+        else
+        {
+            if (ticks_to_wait == 0 || ((ticks_to_wait > 0) && (int32_t)(target_ticks - ticks) <= 0))
+            {
+                /* Failure: give up waiting */
+                exit_critical();
+                break;
+            }
+            if (ticks_to_wait > 0)
+            {
+                running_task->flags |= TASK_BLOCKED | TASK_SLEEPING;
+                running_task->wait_until = target_ticks;
+            }
+            else
+            {
+                running_task->flags |= TASK_BLOCKED;
+            }
+            running_task->wait_for = sem;
+                
+            /* Move this task to the suspended list */
+            p = running_task->priority;
+            runnable_list[p] = runnable_list[p]->next_runnable;
+            running_task->next_suspended = suspended_list;
+            suspended_list = running_task;
+            running_task->next_blocked = sem->blocked_list;
+            sem->blocked_list = running_task;
+            yield();
+        }
+        
+        exit_critical();
+    }
+    
+    return got;
+}
+
+void signal_semaphore(semaphore_t *sem)
+{
+    task_t *task;
+    
+    enter_critical();
+    
+    ++sem->value;
+    if (sem->value == 1)
+    {
+        /* See if there are some tasks to unblock */
+        task = sem->blocked_list;
+        while (task)
+        {
+            task->wait_for = NULL;
+            task = task->next_blocked;
+        }
+        if (sem->blocked_list)
+        {
+            sem->blocked_list = NULL;
+            yield();
+        }
+    }
+    
+    exit_critical();
+}
+
 void sleep_until(uint32_t target_ticks)
 {
     unsigned p;
@@ -188,7 +273,7 @@ void yield(void)
 uint32_t *choose_next_task(uint32_t *current_sp)
 {
     unsigned p;
-    task_t *task, **pprev, *insert_point;
+    task_t *task, *taskb, **pprev, **pprevb, *insert_point;
     
     /* Save the outgoing task's stack pointer */
     running_task->sp = current_sp;
@@ -237,7 +322,22 @@ uint32_t *choose_next_task(uint32_t *current_sp)
         {
             /* Remove this task from the suspended list - update previous next_suspended value */
             *pprev = task->next_suspended;
-            /* Add to the correct runnable list */
+            /* Remove a timed-out task from the semaphore's list */
+            if (task->wait_for != NULL)
+            {
+                pprevb = &task->wait_for->blocked_list;
+                for (taskb = task->wait_for->blocked_list; task; task = task->next_blocked)
+                {
+                    if (taskb == task)
+                    {
+                        *pprevb = task->next_blocked;
+                        break;
+                    }
+                    pprevb = &taskb->next_blocked;
+                }
+                task->wait_for = NULL;
+            }
+            /* Add task to the correct runnable list */
             task->flags = TASK_RUNNABLE;
             task->next_runnable = runnable_list[task->priority];
             runnable_list[task->priority] = task;

@@ -20,6 +20,7 @@ uint32_t task2_stack[64] __ALIGNED(8);
 uint32_t task3_stack[64] __ALIGNED(8);
 uint32_t task4_stack[64] __ALIGNED(8);
 
+semaphore_t sem1 = {0, NULL};
 
 void task1_main(void *arg)
 {
@@ -31,11 +32,14 @@ void task1_main(void *arg)
         tick_target += 1000;
         sleep_until(tick_target);
         dprintf("_");
+        signal_semaphore(&sem1);
     }
 }
 
 void task2_main(void *arg)
 {
+    bool got;
+    
     while(1)
     {
         for (volatile unsigned i = 0; i < 100000; ++i)
@@ -43,7 +47,8 @@ void task2_main(void *arg)
             /* spin */
         }
         sleep(1);
-        dprintf("2");
+        got = wait_semaphore(&sem1, 275);
+        dprintf(got ? "2" : "X");
     }
 }
 
@@ -51,12 +56,12 @@ void task3_main(void *arg)
 {
     while(1)
     {
-        for (volatile unsigned i = 0; i < 10000; ++i)
+        for (volatile unsigned i = 0; i < 50000; ++i)
         {
             /* spin */
         }
         sleep(1);
-        dprintf("3");
+//        dprintf(":");
     }
 }
 
@@ -64,11 +69,11 @@ void task4_main(void *arg)
 {
     while(1)
     {
-        for (volatile unsigned i = 0; i < 10000; ++i)
+        for (volatile unsigned i = 0; i < 50000; ++i)
         {
             /* spin */
         }
-        dprintf("4");
+//        dprintf(";");
     }
 }
 
