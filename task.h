@@ -27,6 +27,6 @@ extern void exit_critical(void);
 extern void sleep(uint32_t ticks_to_sleep);
 extern int add_task(task_function_t *task_function, task_t *task, uint32_t *stack, unsigned stack_words);
 extern __NO_RETURN void start_rtos(uint32_t cpu_clocks_per_tick);
-extern void yield_from_task(void);
+extern void yield(void);
 
 #endif

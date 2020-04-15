@@ -28,7 +28,6 @@ void task1_main(void *arg)
             /* spin */
         }
         dprintf("_");
-        yield_from_task();
     }
 }
 
@@ -41,7 +40,6 @@ void task2_main(void *arg)
             /* spin */
         }
         dprintf("2");
-        yield_from_task();
     }
 }
 
@@ -99,6 +97,7 @@ void LPTIM1_IRQHandler(void)
 {
     LPTIM1->ICR = LPTIM_IER_ARRMIE;
     ++ticks;
+    yield();
 }
 
 /*

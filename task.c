@@ -129,11 +129,11 @@ void sleep(uint32_t ticks_to_sleep)
     running_list = running_list->next_running;
     this->next_suspended = suspended_list;
     suspended_list = this;
-    yield_from_task();
+    yield();
     exit_critical();
 }
     
-void yield_from_task(void)
+void yield(void)
 {
     NVIC->ISPR[0] = YIELD_BIT;
 }
@@ -260,7 +260,7 @@ __NO_RETURN void idle_task_function(void *arg)
     while (1)
     {
         /* spin */
-        yield_from_task();
+        yield();
     }
 }
 
@@ -292,7 +292,7 @@ void __NO_RETURN start_rtos(uint32_t cpu_clocks_per_tick)
     NVIC->IP[TIMER_PRIO_REG] |= TIMER_PRIO;
     NVIC->ISER[0] = TIMER_BIT;
     /* Pend the interrupt that will yield to first ready task */
-    NVIC->ISPR[0] = YIELD_BIT;
+    yield();
     start_idle_task(idle_task.sp);
     
     /* Should never get here */
