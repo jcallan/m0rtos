@@ -400,9 +400,6 @@
           </Files>
         </Group>
         <Group>
-          <GroupName>Chip</GroupName>
-        </Group>
-        <Group>
           <GroupName>RTOS</GroupName>
           <Files>
             <File>

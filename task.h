@@ -19,6 +19,8 @@ typedef struct task_s task_t;
 
 typedef void (task_function_t)(void *);
 
+extern volatile uint32_t ticks;
+
 extern void enter_critical(void);
 extern void exit_critical(void);
 

@@ -76,7 +76,7 @@ void init_usart2(void)
 void init_lpusart1(void)
 {
     /* Select APB1 clock for LPUART1 and GPIOA */
-    LL_RCC_SetUSARTClockSource(LL_RCC_LPUART1_CLKSOURCE_PCLK1);
+    LL_RCC_SetLPUARTClockSource(LL_RCC_LPUART1_CLKSOURCE_PCLK1);
     RCC->APB1ENR |= RCC_APB1ENR_LPUART1EN;
     RCC->IOPENR |= RCC_IOPENR_IOPAEN;
 
@@ -90,6 +90,29 @@ void init_lpusart1(void)
     LPUART1->CR1 = USART_CR1_TE | USART_CR1_RE;
     LPUART1->BRR = GET_LPUART_BRR_VALUE(32000000, 115200);
     LL_LPUART_Enable(LPUART1);
+}
+
+/*
+ * Timer tick interrupt handler
+ */
+void LPTIM1_IRQHandler(void)
+{
+    LPTIM1->ICR = LPTIM_IER_ARRMIE;
+    ++ticks;
+}
+
+/*
+ * Configure the timer to tick at 1000Hz
+ * NVIC stuff (interrupt priority and enable) is done in start_rtos().
+ */
+void init_lptim(unsigned clocks_per_tick)
+{
+    LL_RCC_SetLPTIMClockSource(LL_RCC_LPTIM1_CLKSOURCE_PCLK1);
+    RCC->APB1ENR |= RCC_APB1ENR_LPTIM1EN;
+    LPTIM1->IER = LPTIM_IER_ARRMIE;
+    LPTIM1->CR  = LPTIM_CR_ENABLE;
+    LPTIM1->ARR = (LPTIM1->ARR & 0xffff0000) | clocks_per_tick;
+    LPTIM1->CR |= LPTIM_CR_CNTSTRT;
 }
 
 int outbyte(int c)
@@ -116,6 +139,8 @@ void __NO_RETURN main(void)
 
     add_task(task2_main, &task2, task2_stack, sizeof(task2_stack) / 4);
     add_task(task1_main, &task1, task1_stack, sizeof(task1_stack) / 4);
+    
+    init_lptim(32000);
     start_rtos(32000);
     
     while(1)

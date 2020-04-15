@@ -13,8 +13,8 @@ static task_t *running_list   = NULL;
 static task_t *suspended_list = NULL;
 static task_t *running_task   = NULL;
 
-static uint32_t enabled_irqs1, enabled_irqs2;
-static int nesting = 0;
+uint32_t enabled_irqs1, enabled_irqs2;
+int nesting = 0;
 
 static uint32_t idle_task_stack[48] __ALIGNED(8);
 static task_t idle_task;
@@ -22,8 +22,6 @@ static task_t idle_task;
 /*
  * Enter critical section in task context
  * Calls to this function can be nested
- * Note that we clear the SysTick *enable* bit to stop it counting - clearing the
- * *interrupt* bit causes lost tick interrupts
  */
 void enter_critical(void)
 {
@@ -34,7 +32,6 @@ void enter_critical(void)
         enabled_irqs1 = NVIC->ICER[0];
         /* Disable all interrupts except the realtime ones */
         NVIC->ICER[0] = ~REALTIME_IRQS;
-        SysTick->CTRL &= ~SysTick_CTRL_ENABLE_Msk;
         __enable_irq();
     }
     ++nesting;
@@ -49,19 +46,15 @@ void exit_critical(void)
     --nesting;
     if (nesting == 0)
     {
-        __disable_irq();
-        NVIC->ISER[0] |= enabled_irqs1;
-        SysTick->CTRL |= SysTick_CTRL_ENABLE_Msk;
-        __enable_irq();
+        NVIC->ISER[0] = enabled_irqs1;
     }
 }
 
 /*
  * Enter critical section in IRQ context - prevent all interrupts below realtime priority
- * No need to disable SysTick as it has the lowest IRQ priority.
  * Calls to this function cannot be nested
  */
-void enter_critical_irq(void)
+void enter_critical_irq2(void)
 {
     __disable_irq();
     /* Remember which IRQs were enabled */
@@ -71,15 +64,30 @@ void enter_critical_irq(void)
     __enable_irq();
 }
 
+__ASM void enter_critical_irq(void)
+{
+    IMPORT enabled_irqs2
+    
+    ldr r0, =enabled_irqs2
+    ldr r1, =0xE000E180
+    ldr r2, =~REALTIME_IRQS
+    cpsid i
+    ldr r3, [r1]        /* Read NVIC->ICER[0]                     */
+    str r3, [r0]        /* Save the value in enabled_irqs2        */
+    str r2, [r1]        /* Disable all except realtime interrupts */
+    cpsie i
+    bx lr
+    
+    ALIGN 4
+}
+
 /*
  * Exit critical section in IRQ context
  * Calls to this function cannot be nested
  */
 void exit_critical_irq(void)
 {
-    __disable_irq();
-    NVIC->ISER[0] |= enabled_irqs2;
-    __enable_irq();
+    NVIC->ISER[0] = enabled_irqs2;
 }
 
 
@@ -205,7 +213,6 @@ uint32_t *choose_next_task(uint32_t *current_sp)
 __ASM void Yield_IRQHandler(void)
 {
     IMPORT choose_next_task
-    IMPORT enter_critical_irq
     IMPORT exit_critical_irq
     /* 
      * We have taken an interrupt while running the current task, so the Process Stack looks like this:
@@ -257,12 +264,7 @@ __ASM void Yield_IRQHandler(void)
     ldr r0, =0xFFFFFFFD
     bx r0
 
-    align 4
-}
-
-void SysTick_Handler(void)
-{
-    ++ticks;
+    ALIGN 4
 }
 
 __NO_RETURN void idle_task_function(void *arg)
@@ -297,15 +299,13 @@ void __NO_RETURN start_rtos(uint32_t cpu_clocks_per_tick)
     add_task(idle_task_function, &idle_task, idle_task_stack, sizeof(idle_task_stack) / 4);
     /* The idle task starts with an empty stack, as we call it directly */
     idle_task.sp = idle_task_stack + sizeof(idle_task_stack) / 4;
+
     /* Enable the yield interrupt, set it to the lowest priority */
     NVIC->IP[YIELD_PRIO_REG] |= YIELD_PRIO;
     NVIC->ISER[0] = YIELD_BIT;
-    /* Enable the SysTick interrupt, set it to the lowest priority */
-    SCB->SHP[1] |= SYS_IRQ_PRIO << 24;
-    /* Start SysTick */
-    SysTick->LOAD = cpu_clocks_per_tick - 1;
-    SysTick->VAL  = 0;
-    SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_TICKINT_Msk | SysTick_CTRL_ENABLE_Msk;
+    /* Enable the timer interrupt, set it to the lowest priority */
+    NVIC->IP[TIMER_PRIO_REG] |= TIMER_PRIO;
+    NVIC->ISER[0] = TIMER_BIT;
     /* Pend the interrupt that will yield to first ready task */
     NVIC->ISPR[0] = YIELD_BIT;
     start_idle_task(idle_task.sp);
