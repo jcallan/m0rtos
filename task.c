@@ -13,83 +13,68 @@ static task_t *running_list   = NULL;
 static task_t *suspended_list = NULL;
 static task_t *running_task   = NULL;
 
-uint32_t enabled_irqs1, enabled_irqs2;
+uint32_t enabled_irqs;
 int nesting = 0;
 
 static uint32_t idle_task_stack[48] __ALIGNED(8);
 static task_t idle_task;
 
 /*
- * Enter critical section in task context
- * Calls to this function can be nested
- */
-void enter_critical(void)
-{
-    if (nesting == 0)
-    {
-        __disable_irq();
-        /* Remember which IRQs were enabled */
-        enabled_irqs1 = NVIC->ICER[0];
-        /* Disable all interrupts except the realtime ones */
-        NVIC->ICER[0] = ~REALTIME_IRQS;
-        __enable_irq();
-    }
-    ++nesting;
-}
-
-/*
- * Exit critical section in task context
- * Calls to this function can be nested
- */
-void exit_critical(void)
-{
-    --nesting;
-    if (nesting == 0)
-    {
-        NVIC->ISER[0] = enabled_irqs1;
-    }
-}
-
-/*
- * Enter critical section in IRQ context - prevent all interrupts below realtime priority
+ * Enter critical section - prevent all interrupts below realtime priority
  * Calls to this function cannot be nested
  */
-void enter_critical_irq2(void)
+__ASM void _enter_critical(void)
 {
-    __disable_irq();
-    /* Remember which IRQs were enabled */
-    enabled_irqs2 = NVIC->ICER[0];
-    /* Disable all interrupts except the realtime ones */
-    NVIC->ICER[0] = ~REALTIME_IRQS;
-    __enable_irq();
-}
-
-__ASM void enter_critical_irq(void)
-{
-    IMPORT enabled_irqs2
+    IMPORT enabled_irqs
     
-    ldr r0, =enabled_irqs2
+    ldr r0, =enabled_irqs
     ldr r1, =0xE000E180
     ldr r2, =~REALTIME_IRQS
     cpsid i
     ldr r3, [r1]        /* Read NVIC->ICER[0]                     */
-    str r3, [r0]        /* Save the value in enabled_irqs2        */
     str r2, [r1]        /* Disable all except realtime interrupts */
     cpsie i
+    ands r3, r3, r2     /* Mask out the realtime interrupts       */
+    str r3, [r0]        /* Save the value in enabled_irqs2        */
     bx lr
     
     ALIGN 4
 }
 
 /*
- * Exit critical section in IRQ context
+ * Exit critical section - return interrupt mask to what it was before
  * Calls to this function cannot be nested
  */
-void exit_critical_irq(void)
+void _exit_critical(void)
 {
-    NVIC->ISER[0] = enabled_irqs2;
+    NVIC->ISER[0] = enabled_irqs;
 }
 
+/*
+ * Enter critical section in task context
+ * Calls to this function can be nested within a task
+ */
+void enter_critical(void)
+{
+    if (nesting == 0)
+    {
+        _enter_critical();
+    }
+    ++nesting;
+}
+
+/*
+ * Exit critical section in task context
+ * Calls to this function can be nested within a task
+ */
+void exit_critical(void)
+{
+    --nesting;
+    if (nesting == 0)
+    {
+        _exit_critical();
+    }
+}
 
 void task_returned(void)
 {
@@ -213,7 +198,7 @@ uint32_t *choose_next_task(uint32_t *current_sp)
 __ASM void Yield_IRQHandler(void)
 {
     IMPORT choose_next_task
-    IMPORT exit_critical_irq
+    IMPORT _exit_critical
     /* 
      * We have taken an interrupt while running the current task, so the Process Stack looks like this:
      *    ... (earlier contents of stack)
@@ -248,11 +233,11 @@ __ASM void Yield_IRQHandler(void)
     stmia r0!, {r4-r7}
     subs r0, r0, #16
     mov r4, r0
-    bl enter_critical_irq   /* Protect task lists from IRQ access */
+    bl _enter_critical      /* Protect task lists from IRQ access */
     mov r0, r4
     bl choose_next_task
     mov r4, r0
-    bl exit_critical_irq
+    bl _exit_critical
     mov r0, r4
     ldmia r0!, {r4-r7}
     mov r8, r4
