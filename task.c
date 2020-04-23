@@ -173,10 +173,11 @@ static void block_on_semaphore(semaphore_t *sem, bool sleep, uint32_t target_tic
  * Wait for a semaphore
  * ticks_to_wait special values: zero (don't wait), negative (wait forever)
  */
-bool wait_semaphore(semaphore_t *sem, unsigned amount, int ticks_to_wait)
+bool wait_semaphore(semaphore_t *sem, uint8_t *buf, unsigned amount, int ticks_to_wait)
 {
     bool got = false;
     int level;
+    unsigned i;
     uint32_t target_ticks;
 
     target_ticks = ticks + ticks_to_wait;
@@ -194,10 +195,14 @@ bool wait_semaphore(semaphore_t *sem, unsigned amount, int ticks_to_wait)
         /* Can we satisfy the request for data? */
         if (level >= amount)
         {
-            sem->out += amount;
-            if (sem->out > sem->max)
+            for (i = 0; i < amount; ++i)
             {
-                sem->out -= sem->max;
+                buf[i] = sem->data[sem->out];
+                ++sem->out;
+                if (sem->out >= sem->max)
+                {
+                    sem->out -= sem->max;
+                }
             }
             /* Success */
             got = true;
@@ -230,10 +235,11 @@ bool wait_semaphore(semaphore_t *sem, unsigned amount, int ticks_to_wait)
  * Signal a semaphore
  * ticks_to_wait special values: zero (don't wait), negative (wait forever)
  */
-bool signal_semaphore(semaphore_t *sem, unsigned amount, int ticks_to_wait)
+bool signal_semaphore(semaphore_t *sem, const uint8_t *buf, unsigned amount, int ticks_to_wait)
 {
     bool put = false;
     int level;
+    unsigned i;
     uint32_t target_ticks;
 
     target_ticks = ticks + ticks_to_wait;
@@ -249,12 +255,16 @@ bool signal_semaphore(semaphore_t *sem, unsigned amount, int ticks_to_wait)
             level += sem->max;
         }
         /* Can we store this amount of data? */
-        if (level + amount < sem->max)
+        if (level + amount < sem->max)                  /* We always leave 1 byte empty */
         {
-            sem->in += amount;
-            if (sem->in > sem->max)
+            for (i = 0; i < amount; ++i)
             {
-                sem->in -= sem->max;
+                sem->data[sem->in] = buf[i];
+                ++sem->in;
+                if (sem->in >= sem->max)
+                {
+                    sem->in -= sem->max;
+                }
             }
             if (wake_tasks_blocked_on_semaphore(sem))
             {

@@ -27,6 +27,7 @@ void task1_main(void *arg)
 {
     uint32_t tick_target;
     unsigned i;
+    const uint8_t my_data[2] = {'a', 'b'};
     
     tick_target = ticks;
     while(1)
@@ -35,7 +36,7 @@ void task1_main(void *arg)
         sleep_until(tick_target);
         for (i = 0; i < 4; ++i)
         {
-            if (signal_semaphore(&sem1, 2, 1))
+            if (signal_semaphore(&sem1, my_data, 2, 1))
             {
                 dprintf("_");
             }
@@ -51,6 +52,7 @@ void task2_main(void *arg)
 {
     bool got;
     unsigned i;
+    uint8_t my_data;
     
     while(1)
     {
@@ -61,8 +63,8 @@ void task2_main(void *arg)
         for (i = 0; i < 3; ++i)
         {
             sleep(5);
-            got = wait_semaphore(&sem1, 1, 275);
-            dprintf(got ? "2" : "X");
+            got = wait_semaphore(&sem1, &my_data, 1, 275);
+            dprintf("%c", got ? my_data : 'X');
         }
     }
 }
