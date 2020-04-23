@@ -35,7 +35,7 @@ typedef void (task_function_t)(void *);
 
 #define DECLARE_QUEUE(queue_name, length_plus_one)  \
 static uint8_t queue_name##_data_[length_plus_one]; \
-queue_t queue1 = {0, 0, length_plus_one, queue_name##_data_, NULL}
+queue_t queue_name = {0, 0, length_plus_one, queue_name##_data_, NULL}
 
 extern volatile uint32_t ticks;
 
@@ -44,6 +44,9 @@ extern void exit_critical(void);
 
 extern bool read_queue(queue_t *q, uint8_t *buf, unsigned amount, int ticks_to_wait);
 extern bool write_queue(queue_t *q, const uint8_t *buf, unsigned amount, int ticks_to_wait);
+extern bool read_queue_irq(queue_t *q, uint8_t *buf, unsigned amount);
+extern bool write_queue_irq(queue_t *q, const uint8_t *buf, unsigned amount);
+
 
 extern void sleep(uint32_t ticks_to_sleep);
 extern void sleep_until(uint32_t target_ticks);

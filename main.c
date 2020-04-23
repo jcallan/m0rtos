@@ -21,13 +21,16 @@ uint32_t task3_stack[64] __ALIGNED(8);
 uint32_t task4_stack[64] __ALIGNED(8);
 
 DECLARE_QUEUE(queue1, 6);
+DECLARE_QUEUE(lpuart_outq, 101);
 
 void task1_main(void *arg)
 {
     uint32_t tick_target;
     unsigned i;
     const uint8_t my_data[2] = {'a', 'b'};
-    
+        
+    dprintf("\nHello world!\n");
+
     tick_target = ticks;
     while(1)
     {
@@ -121,6 +124,25 @@ void init_usart2(void)
     LL_USART_Enable(USART2);
 }
 
+void LPUART1_IRQHandler(void)
+{
+    bool got_data;
+    uint8_t c;
+    
+    if (LPUART1->ISR & USART_ISR_TXE)
+    {
+        got_data = read_queue_irq(&lpuart_outq, &c, 1);
+        if (got_data)
+        {
+            LPUART1->TDR = c;
+        }
+        else
+        {
+            LPUART1->CR1 &= ~USART_CR1_TXEIE;
+        }
+    }
+}
+
 void init_lpuart1(void)
 {
     /* Select APB1 clock for LPUART1 and GPIOA */
@@ -138,6 +160,9 @@ void init_lpuart1(void)
     LPUART1->CR1 = USART_CR1_TE | USART_CR1_RE;
     LPUART1->BRR = GET_LPUART_BRR_VALUE(32000000, 115200);
     LL_LPUART_Enable(LPUART1);
+    
+    NVIC_EnableIRQ(LPUART1_IRQn);
+    NVIC_SetPriority(LPUART1_IRQn, 2);
 }
 
 /*
@@ -165,11 +190,10 @@ void init_lptim(unsigned clocks_per_tick)
 
 int outbyte(int c)
 {
-    while (!(LPUART1->ISR & LL_LPUART_ISR_TXE))
-    {
-        /* Wait */
-    }
-    LL_USART_TransmitData8(LPUART1, c);
+    uint8_t data = (uint8_t)c;
+    
+    write_queue(&lpuart_outq, &data, 1, 0);
+    LPUART1->CR1 |= USART_CR1_TXEIE;        /* Should have a critical section: read+write */
     return 0;
 }
 
@@ -183,7 +207,6 @@ void __NO_RETURN main(void)
     
     init_lpuart1();
     //init_usart2();
-    dprintf("\nHello world!\n");
 
     add_task(task4_main, &task4, task4_stack, sizeof(task4_stack) / 4, 2);
     add_task(task3_main, &task3, task3_stack, sizeof(task3_stack) / 4, 2);
