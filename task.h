@@ -33,6 +33,10 @@ typedef struct task_s task_t;
 typedef struct queue_s queue_t;
 typedef void (task_function_t)(void *);
 
+#define DECLARE_QUEUE(queue_name, length_plus_one)  \
+static uint8_t queue_name##_data_[length_plus_one]; \
+queue_t queue1 = {0, 0, length_plus_one, queue_name##_data_, NULL}
+
 extern volatile uint32_t ticks;
 
 extern void enter_critical(void);

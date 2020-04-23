@@ -20,8 +20,7 @@ uint32_t task2_stack[64] __ALIGNED(8);
 uint32_t task3_stack[64] __ALIGNED(8);
 uint32_t task4_stack[64] __ALIGNED(8);
 
-uint8_t queue1_data[5+1];
-queue_t queue1 = {0, 0, sizeof(queue1_data), queue1_data, NULL};
+DECLARE_QUEUE(queue1, 6);
 
 void task1_main(void *arg)
 {
