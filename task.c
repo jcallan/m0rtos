@@ -176,6 +176,7 @@ static void block_on_semaphore(semaphore_t *sem, bool sleep, uint32_t target_tic
 bool wait_semaphore(semaphore_t *sem, unsigned amount, int ticks_to_wait)
 {
     bool got = false;
+    int level;
     uint32_t target_ticks;
 
     target_ticks = ticks + ticks_to_wait;
@@ -184,9 +185,20 @@ bool wait_semaphore(semaphore_t *sem, unsigned amount, int ticks_to_wait)
     {
         enter_critical();
         
-        if (sem->value >= amount)
+        /* How much data is currently in the queue? */
+        level = sem->in - sem->out;
+        if (level < 0)
         {
-            sem->value -= amount;
+            level += sem->max;
+        }
+        /* Can we satisfy the request for data? */
+        if (level >= amount)
+        {
+            sem->out += amount;
+            if (sem->out > sem->max)
+            {
+                sem->out -= sem->max;
+            }
             /* Success */
             got = true;
             if (wake_tasks_blocked_on_semaphore(sem))
@@ -221,6 +233,7 @@ bool wait_semaphore(semaphore_t *sem, unsigned amount, int ticks_to_wait)
 bool signal_semaphore(semaphore_t *sem, unsigned amount, int ticks_to_wait)
 {
     bool put = false;
+    int level;
     uint32_t target_ticks;
 
     target_ticks = ticks + ticks_to_wait;
@@ -229,9 +242,20 @@ bool signal_semaphore(semaphore_t *sem, unsigned amount, int ticks_to_wait)
     {
         enter_critical();
 
-        if (sem->value + amount <= sem->max)
+        /* How much data is currently in the queue? */
+        level = sem->in - sem->out;
+        if (level < 0)
         {
-            sem->value += amount;
+            level += sem->max;
+        }
+        /* Can we store this amount of data? */
+        if (level + amount < sem->max)
+        {
+            sem->in += amount;
+            if (sem->in > sem->max)
+            {
+                sem->in -= sem->max;
+            }
             if (wake_tasks_blocked_on_semaphore(sem))
             {
                 yield();

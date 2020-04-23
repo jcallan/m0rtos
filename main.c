@@ -20,7 +20,8 @@ uint32_t task2_stack[64] __ALIGNED(8);
 uint32_t task3_stack[64] __ALIGNED(8);
 uint32_t task4_stack[64] __ALIGNED(8);
 
-semaphore_t sem1 = {0, 5, NULL};
+uint8_t sem1_data[5+1];
+semaphore_t sem1 = {0, 0, sizeof(sem1_data), sem1_data, NULL};
 
 void task1_main(void *arg)
 {

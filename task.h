@@ -24,8 +24,8 @@ struct task_s
 
 struct semaphore_s
 {
-    int value;
-    int max;
+    unsigned in, out, max;
+    uint8_t *data;
     struct task_s *blocked_list;
 };
 
