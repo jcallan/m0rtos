@@ -127,13 +127,54 @@ int add_task(task_function_t *task_function, task_t *task, uint32_t *stack, unsi
     return 0;
 }
 
+static bool wake_tasks_blocked_on_semaphore(semaphore_t *sem)
+{
+    task_t *task;
+    
+    /* See if there are some tasks to unblock */
+    task = sem->blocked_list;
+    while (task)
+    {
+        task->wait_for = NULL;
+        task = task->next_blocked;
+    }
+    if (sem->blocked_list)
+    {
+        sem->blocked_list = NULL;
+        return true;
+    }
+    return false;
+}
+
+static void block_on_semaphore(semaphore_t *sem, bool sleep, uint32_t target_ticks)
+{
+    unsigned p;
+
+    /* Move this task to the blocked list and the suspended list */
+    p = running_task->priority;
+    runnable_list[p] = runnable_list[p]->next_runnable;
+    running_task->next_blocked = sem->blocked_list;
+    sem->blocked_list = running_task;
+    running_task->next_suspended = suspended_list;
+    suspended_list = running_task;
+    if (sleep)
+    {
+        running_task->flags |= TASK_BLOCKED | TASK_SLEEPING;
+        running_task->wait_until = target_ticks;
+    }
+    else
+    {
+        running_task->flags |= TASK_BLOCKED;
+    }
+    running_task->wait_for = sem;
+}
+
 /*
  * Wait for a semaphore
  * ticks_to_wait special values: zero (don't wait), negative (wait forever)
  */
 bool wait_semaphore(semaphore_t *sem, int ticks_to_wait)
 {
-    unsigned p;
     bool got = false;
     uint32_t target_ticks;
 
@@ -148,6 +189,10 @@ bool wait_semaphore(semaphore_t *sem, int ticks_to_wait)
             --sem->value;
             /* Success */
             got = true;
+            if (wake_tasks_blocked_on_semaphore(sem))
+            {
+                yield();
+            }
             exit_critical();
             break;
         }
@@ -159,24 +204,7 @@ bool wait_semaphore(semaphore_t *sem, int ticks_to_wait)
                 exit_critical();
                 break;
             }
-            if (ticks_to_wait > 0)
-            {
-                running_task->flags |= TASK_BLOCKED | TASK_SLEEPING;
-                running_task->wait_until = target_ticks;
-            }
-            else
-            {
-                running_task->flags |= TASK_BLOCKED;
-            }
-            running_task->wait_for = sem;
-                
-            /* Move this task to the suspended list */
-            p = running_task->priority;
-            runnable_list[p] = runnable_list[p]->next_runnable;
-            running_task->next_suspended = suspended_list;
-            suspended_list = running_task;
-            running_task->next_blocked = sem->blocked_list;
-            sem->blocked_list = running_task;
+            block_on_semaphore(sem, ticks_to_wait > 0, target_ticks);
             yield();
         }
         
@@ -186,30 +214,48 @@ bool wait_semaphore(semaphore_t *sem, int ticks_to_wait)
     return got;
 }
 
-void signal_semaphore(semaphore_t *sem)
+/*
+ * Signal a semaphore
+ * ticks_to_wait special values: zero (don't wait), negative (wait forever)
+ */
+bool signal_semaphore(semaphore_t *sem, int ticks_to_wait)
 {
-    task_t *task;
+    bool put = false;
+    uint32_t target_ticks;
+
+    target_ticks = ticks + ticks_to_wait;
     
-    enter_critical();
-    
-    ++sem->value;
-    if (sem->value == 1)
+    while (true)
     {
-        /* See if there are some tasks to unblock */
-        task = sem->blocked_list;
-        while (task)
+        enter_critical();
+
+        if (sem->value < sem->max)
         {
-            task->wait_for = NULL;
-            task = task->next_blocked;
+            ++sem->value;
+            if (wake_tasks_blocked_on_semaphore(sem))
+            {
+                yield();
+            }
+            put = true;
+            exit_critical();
+            break;
         }
-        if (sem->blocked_list)
+        else
         {
-            sem->blocked_list = NULL;
+            if (ticks_to_wait == 0 || ((ticks_to_wait > 0) && (int32_t)(target_ticks - ticks) <= 0))
+            {
+                /* Failure: give up waiting */
+                exit_critical();
+                break;
+            }
+            block_on_semaphore(sem, ticks_to_wait > 0, target_ticks);
             yield();
         }
+        
+        exit_critical();
     }
     
-    exit_critical();
+    return put;
 }
 
 void sleep_until(uint32_t target_ticks)

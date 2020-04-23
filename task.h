@@ -25,6 +25,7 @@ struct task_s
 struct semaphore_s
 {
     int value;
+    int max;
     struct task_s *blocked_list;
 };
 
@@ -38,7 +39,7 @@ extern void enter_critical(void);
 extern void exit_critical(void);
 
 extern bool wait_semaphore(semaphore_t *sem, int ticks_to_wait);
-extern void signal_semaphore(semaphore_t *sem);
+extern bool signal_semaphore(semaphore_t *sem, int ticks_to_wait);
 
 extern void sleep(uint32_t ticks_to_sleep);
 extern void sleep_until(uint32_t target_ticks);

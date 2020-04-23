@@ -20,25 +20,36 @@ uint32_t task2_stack[64] __ALIGNED(8);
 uint32_t task3_stack[64] __ALIGNED(8);
 uint32_t task4_stack[64] __ALIGNED(8);
 
-semaphore_t sem1 = {0, NULL};
+semaphore_t sem1 = {0, 2, NULL};
 
 void task1_main(void *arg)
 {
     uint32_t tick_target;
+    unsigned i;
     
     tick_target = ticks;
     while(1)
     {
         tick_target += 1000;
         sleep_until(tick_target);
-        dprintf("_");
-        signal_semaphore(&sem1);
+        for (i = 0; i < 4; ++i)
+        {
+            if (signal_semaphore(&sem1, 1))
+            {
+                dprintf("_");
+            }
+            else
+            {
+                dprintf("-");
+            }
+        }
     }
 }
 
 void task2_main(void *arg)
 {
     bool got;
+    unsigned i;
     
     while(1)
     {
@@ -46,9 +57,12 @@ void task2_main(void *arg)
         {
             /* spin */
         }
-        sleep(1);
-        got = wait_semaphore(&sem1, 275);
-        dprintf(got ? "2" : "X");
+        for (i = 0; i < 3; ++i)
+        {
+            sleep(5);
+            got = wait_semaphore(&sem1, 275);
+            dprintf(got ? "2" : "X");
+        }
     }
 }
 
@@ -87,7 +101,7 @@ void init_usart2(void)
     RCC->APB1ENR |= RCC_APB1ENR_USART2EN;
     RCC->IOPENR |= RCC_IOPENR_IOPBEN;
 
-    /* Set PB6 and PB7 pins for "alternate function" (USART2) */
+    /* Set PB6 and PB7 pins for "alternate function 0" (USART2) */
     LL_GPIO_SetPinMode(GPIOB, LL_GPIO_PIN_6, LL_GPIO_MODE_ALTERNATE);
     LL_GPIO_SetPinMode(GPIOB, LL_GPIO_PIN_7, LL_GPIO_MODE_ALTERNATE);
     LL_GPIO_SetAFPin_0_7(GPIOB, LL_GPIO_PIN_6, LL_GPIO_AF_0);
@@ -105,14 +119,14 @@ void init_usart2(void)
     LL_USART_Enable(USART2);
 }
 
-void init_lpusart1(void)
+void init_lpuart1(void)
 {
     /* Select APB1 clock for LPUART1 and GPIOA */
     LL_RCC_SetLPUARTClockSource(LL_RCC_LPUART1_CLKSOURCE_PCLK1);
     RCC->APB1ENR |= RCC_APB1ENR_LPUART1EN;
     RCC->IOPENR |= RCC_IOPENR_IOPAEN;
 
-    /* Set PB6 and PB7 pins for "alternate function" (USART2) */
+    /* Set PA2 and PA3 pins for "alternate function 6" (LPUART1) */
     LL_GPIO_SetPinMode(GPIOA, LL_GPIO_PIN_2, LL_GPIO_MODE_ALTERNATE);
     LL_GPIO_SetPinMode(GPIOA, LL_GPIO_PIN_3, LL_GPIO_MODE_ALTERNATE);
     LL_GPIO_SetAFPin_0_7(GPIOA, LL_GPIO_PIN_2, LL_GPIO_AF_6);
@@ -165,7 +179,7 @@ void __NO_RETURN main(void)
     /* Switch to 32 MHz clock */
     LL_PLL_ConfigSystemClock_HSI(&pll_init, &clk_init);
     
-    init_lpusart1();
+    init_lpuart1();
     //init_usart2();
     dprintf("Hello world!\n");
 
