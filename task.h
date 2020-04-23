@@ -38,8 +38,8 @@ extern volatile uint32_t ticks;
 extern void enter_critical(void);
 extern void exit_critical(void);
 
-extern bool wait_semaphore(semaphore_t *sem, int ticks_to_wait);
-extern bool signal_semaphore(semaphore_t *sem, int ticks_to_wait);
+extern bool wait_semaphore(semaphore_t *sem, unsigned amount, int ticks_to_wait);
+extern bool signal_semaphore(semaphore_t *sem, unsigned amount, int ticks_to_wait);
 
 extern void sleep(uint32_t ticks_to_sleep);
 extern void sleep_until(uint32_t target_ticks);

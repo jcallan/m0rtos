@@ -20,7 +20,7 @@ uint32_t task2_stack[64] __ALIGNED(8);
 uint32_t task3_stack[64] __ALIGNED(8);
 uint32_t task4_stack[64] __ALIGNED(8);
 
-semaphore_t sem1 = {0, 2, NULL};
+semaphore_t sem1 = {0, 5, NULL};
 
 void task1_main(void *arg)
 {
@@ -34,7 +34,7 @@ void task1_main(void *arg)
         sleep_until(tick_target);
         for (i = 0; i < 4; ++i)
         {
-            if (signal_semaphore(&sem1, 1))
+            if (signal_semaphore(&sem1, 2, 1))
             {
                 dprintf("_");
             }
@@ -60,7 +60,7 @@ void task2_main(void *arg)
         for (i = 0; i < 3; ++i)
         {
             sleep(5);
-            got = wait_semaphore(&sem1, 275);
+            got = wait_semaphore(&sem1, 1, 275);
             dprintf(got ? "2" : "X");
         }
     }

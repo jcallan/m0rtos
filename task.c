@@ -173,7 +173,7 @@ static void block_on_semaphore(semaphore_t *sem, bool sleep, uint32_t target_tic
  * Wait for a semaphore
  * ticks_to_wait special values: zero (don't wait), negative (wait forever)
  */
-bool wait_semaphore(semaphore_t *sem, int ticks_to_wait)
+bool wait_semaphore(semaphore_t *sem, unsigned amount, int ticks_to_wait)
 {
     bool got = false;
     uint32_t target_ticks;
@@ -184,9 +184,9 @@ bool wait_semaphore(semaphore_t *sem, int ticks_to_wait)
     {
         enter_critical();
         
-        if (sem->value > 0)
+        if (sem->value >= amount)
         {
-            --sem->value;
+            sem->value -= amount;
             /* Success */
             got = true;
             if (wake_tasks_blocked_on_semaphore(sem))
@@ -218,7 +218,7 @@ bool wait_semaphore(semaphore_t *sem, int ticks_to_wait)
  * Signal a semaphore
  * ticks_to_wait special values: zero (don't wait), negative (wait forever)
  */
-bool signal_semaphore(semaphore_t *sem, int ticks_to_wait)
+bool signal_semaphore(semaphore_t *sem, unsigned amount, int ticks_to_wait)
 {
     bool put = false;
     uint32_t target_ticks;
@@ -229,9 +229,9 @@ bool signal_semaphore(semaphore_t *sem, int ticks_to_wait)
     {
         enter_critical();
 
-        if (sem->value < sem->max)
+        if (sem->value + amount <= sem->max)
         {
-            ++sem->value;
+            sem->value += amount;
             if (wake_tasks_blocked_on_semaphore(sem))
             {
                 yield();
