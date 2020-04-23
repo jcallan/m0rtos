@@ -20,8 +20,8 @@ uint32_t task2_stack[64] __ALIGNED(8);
 uint32_t task3_stack[64] __ALIGNED(8);
 uint32_t task4_stack[64] __ALIGNED(8);
 
-uint8_t sem1_data[5+1];
-semaphore_t sem1 = {0, 0, sizeof(sem1_data), sem1_data, NULL};
+uint8_t queue1_data[5+1];
+queue_t queue1 = {0, 0, sizeof(queue1_data), queue1_data, NULL};
 
 void task1_main(void *arg)
 {
@@ -36,7 +36,7 @@ void task1_main(void *arg)
         sleep_until(tick_target);
         for (i = 0; i < 4; ++i)
         {
-            if (signal_semaphore(&sem1, my_data, 2, 1))
+            if (write_queue(&queue1, my_data, 2, 1))
             {
                 dprintf("_");
             }
@@ -63,7 +63,7 @@ void task2_main(void *arg)
         for (i = 0; i < 3; ++i)
         {
             sleep(5);
-            got = wait_semaphore(&sem1, &my_data, 1, 275);
+            got = read_queue(&queue1, &my_data, 1, 275);
             dprintf("%c", got ? my_data : 'X');
         }
     }
@@ -184,7 +184,7 @@ void __NO_RETURN main(void)
     
     init_lpuart1();
     //init_usart2();
-    dprintf("Hello world!\n");
+    dprintf("\nHello world!\n");
 
     add_task(task4_main, &task4, task4_stack, sizeof(task4_stack) / 4, 2);
     add_task(task3_main, &task3, task3_stack, sizeof(task3_stack) / 4, 2);

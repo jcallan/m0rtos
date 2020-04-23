@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-struct semaphore_s;
+struct queue_s;
 
 struct task_s
 {
@@ -19,10 +19,10 @@ struct task_s
     unsigned priority;
     unsigned flags;
     uint32_t wait_until;
-    struct semaphore_s *wait_for;
+    struct queue_s *wait_for;
 };
 
-struct semaphore_s
+struct queue_s
 {
     unsigned in, out, max;
     uint8_t *data;
@@ -30,7 +30,7 @@ struct semaphore_s
 };
 
 typedef struct task_s task_t;
-typedef struct semaphore_s semaphore_t;
+typedef struct queue_s queue_t;
 typedef void (task_function_t)(void *);
 
 extern volatile uint32_t ticks;
@@ -38,8 +38,8 @@ extern volatile uint32_t ticks;
 extern void enter_critical(void);
 extern void exit_critical(void);
 
-extern bool wait_semaphore(semaphore_t *sem, uint8_t *buf, unsigned amount, int ticks_to_wait);
-extern bool signal_semaphore(semaphore_t *sem, const uint8_t *buf, unsigned amount, int ticks_to_wait);
+extern bool read_queue(queue_t *q, uint8_t *buf, unsigned amount, int ticks_to_wait);
+extern bool write_queue(queue_t *q, const uint8_t *buf, unsigned amount, int ticks_to_wait);
 
 extern void sleep(uint32_t ticks_to_sleep);
 extern void sleep_until(uint32_t target_ticks);

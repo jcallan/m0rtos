@@ -82,6 +82,9 @@ void exit_critical(void)
     }
 }
 
+/*
+ * Should never get here
+ */
 void task_returned(void)
 {
     while (1)
@@ -127,34 +130,42 @@ int add_task(task_function_t *task_function, task_t *task, uint32_t *stack, unsi
     return 0;
 }
 
-static bool wake_tasks_blocked_on_semaphore(semaphore_t *sem)
+/*
+ * Wake up all the tasks that are blocked on a queue
+ * Must be called inside a critical section
+ */
+static bool wake_tasks_blocked_on_queue(queue_t *q)
 {
     task_t *task;
     
     /* See if there are some tasks to unblock */
-    task = sem->blocked_list;
+    task = q->blocked_list;
     while (task)
     {
         task->wait_for = NULL;
         task = task->next_blocked;
     }
-    if (sem->blocked_list)
+    if (q->blocked_list)
     {
-        sem->blocked_list = NULL;
+        q->blocked_list = NULL;
         return true;
     }
     return false;
 }
 
-static void block_on_semaphore(semaphore_t *sem, bool sleep, uint32_t target_ticks)
+/*
+ * Suspend the current task on a queue, with optional wake-up time
+ * Must be called inside a critical section
+ */
+static void block_on_queue(queue_t *q, bool sleep, uint32_t target_ticks)
 {
     unsigned p;
 
     /* Move this task to the blocked list and the suspended list */
     p = running_task->priority;
     runnable_list[p] = runnable_list[p]->next_runnable;
-    running_task->next_blocked = sem->blocked_list;
-    sem->blocked_list = running_task;
+    running_task->next_blocked = q->blocked_list;
+    q->blocked_list = running_task;
     running_task->next_suspended = suspended_list;
     suspended_list = running_task;
     if (sleep)
@@ -166,14 +177,16 @@ static void block_on_semaphore(semaphore_t *sem, bool sleep, uint32_t target_tic
     {
         running_task->flags |= TASK_BLOCKED;
     }
-    running_task->wait_for = sem;
+    running_task->wait_for = q;
 }
 
 /*
- * Wait for a semaphore
+ * Read from a queue
+ * Amount to be read must be <= q->max - 1
  * ticks_to_wait special values: zero (don't wait), negative (wait forever)
+ * Must not be called inside a critical section or from interrupt context
  */
-bool wait_semaphore(semaphore_t *sem, uint8_t *buf, unsigned amount, int ticks_to_wait)
+bool read_queue(queue_t *q, uint8_t *buf, unsigned amount, int ticks_to_wait)
 {
     bool got = false;
     int level;
@@ -187,26 +200,26 @@ bool wait_semaphore(semaphore_t *sem, uint8_t *buf, unsigned amount, int ticks_t
         enter_critical();
         
         /* How much data is currently in the queue? */
-        level = sem->in - sem->out;
+        level = q->in - q->out;
         if (level < 0)
         {
-            level += sem->max;
+            level += q->max;
         }
         /* Can we satisfy the request for data? */
         if (level >= amount)
         {
             for (i = 0; i < amount; ++i)
             {
-                buf[i] = sem->data[sem->out];
-                ++sem->out;
-                if (sem->out >= sem->max)
+                buf[i] = q->data[q->out];
+                ++q->out;
+                if (q->out >= q->max)
                 {
-                    sem->out -= sem->max;
+                    q->out -= q->max;
                 }
             }
             /* Success */
             got = true;
-            if (wake_tasks_blocked_on_semaphore(sem))
+            if (wake_tasks_blocked_on_queue(q))
             {
                 yield();
             }
@@ -221,7 +234,7 @@ bool wait_semaphore(semaphore_t *sem, uint8_t *buf, unsigned amount, int ticks_t
                 exit_critical();
                 break;
             }
-            block_on_semaphore(sem, ticks_to_wait > 0, target_ticks);
+            block_on_queue(q, ticks_to_wait > 0, target_ticks);
             yield();
         }
         
@@ -232,10 +245,12 @@ bool wait_semaphore(semaphore_t *sem, uint8_t *buf, unsigned amount, int ticks_t
 }
 
 /*
- * Signal a semaphore
+ * Write to a queue
+ * Amount to be written must be <= q->max - 1
  * ticks_to_wait special values: zero (don't wait), negative (wait forever)
+ * Must not be called inside a critical section or from interrupt context
  */
-bool signal_semaphore(semaphore_t *sem, const uint8_t *buf, unsigned amount, int ticks_to_wait)
+bool write_queue(queue_t *q, const uint8_t *buf, unsigned amount, int ticks_to_wait)
 {
     bool put = false;
     int level;
@@ -249,24 +264,24 @@ bool signal_semaphore(semaphore_t *sem, const uint8_t *buf, unsigned amount, int
         enter_critical();
 
         /* How much data is currently in the queue? */
-        level = sem->in - sem->out;
+        level = q->in - q->out;
         if (level < 0)
         {
-            level += sem->max;
+            level += q->max;
         }
         /* Can we store this amount of data? */
-        if (level + amount < sem->max)                  /* We always leave 1 byte empty */
+        if (level + amount < q->max)                  /* We always leave 1 byte empty */
         {
             for (i = 0; i < amount; ++i)
             {
-                sem->data[sem->in] = buf[i];
-                ++sem->in;
-                if (sem->in >= sem->max)
+                q->data[q->in] = buf[i];
+                ++q->in;
+                if (q->in >= q->max)
                 {
-                    sem->in -= sem->max;
+                    q->in -= q->max;
                 }
             }
-            if (wake_tasks_blocked_on_semaphore(sem))
+            if (wake_tasks_blocked_on_queue(q))
             {
                 yield();
             }
@@ -282,7 +297,7 @@ bool signal_semaphore(semaphore_t *sem, const uint8_t *buf, unsigned amount, int
                 exit_critical();
                 break;
             }
-            block_on_semaphore(sem, ticks_to_wait > 0, target_ticks);
+            block_on_queue(q, ticks_to_wait > 0, target_ticks);
             yield();
         }
         
@@ -402,7 +417,7 @@ uint32_t *choose_next_task(uint32_t *current_sp)
         {
             /* Remove this task from the suspended list - update previous next_suspended value */
             *pprev = task->next_suspended;
-            /* Remove a timed-out task from the semaphore's list */
+            /* Remove a timed-out task from the queue's list */
             if (task->wait_for != NULL)
             {
                 pprevb = &task->wait_for->blocked_list;
