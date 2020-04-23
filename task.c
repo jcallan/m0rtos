@@ -19,7 +19,7 @@ static task_t *runnable_list[NUM_TASK_PRIOS] = {NULL};
 static task_t *suspended_list                = NULL;
 static task_t *running_task                  = NULL;
 
-uint32_t enabled_irqs;
+uint32_t enabled_irqs_task, enabled_irqs_irq;
 int nesting = 0;
 
 static uint32_t idle_task_stack[48] __ALIGNED(8);
@@ -27,13 +27,10 @@ static task_t idle_task;
 
 /*
  * Enter critical section - prevent all interrupts below realtime priority
- * Calls to this function cannot be nested
+ * Calls to this function cannot be nested with the same enabled_irqs address
  */
-__ASM void _enter_critical(void)
+__ASM void _enter_critical(uint32_t *enabled_irqs)
 {
-    IMPORT enabled_irqs
-    
-    ldr r0, =enabled_irqs
     ldr r1, =0xE000E180
     ldr r2, =~REALTIME_IRQS
     cpsid i
@@ -41,7 +38,7 @@ __ASM void _enter_critical(void)
     str r2, [r1]        /* Disable all except realtime interrupts */
     cpsie i
     ands r3, r3, r2     /* Mask out the realtime interrupts       */
-    str r3, [r0]        /* Save the value in enabled_irqs2        */
+    str r3, [r0]        /* Save the value in enabled_irqs         */
     bx lr
     
     ALIGN 4
@@ -49,11 +46,11 @@ __ASM void _enter_critical(void)
 
 /*
  * Exit critical section - return interrupt mask to what it was before
- * Calls to this function cannot be nested
+ * Calls to this function cannot be nested with the same enabled_irqs address
  */
-void _exit_critical(void)
+void _exit_critical(const uint32_t *enabled_irqs)
 {
-    NVIC->ISER[0] = enabled_irqs;
+    NVIC->ISER[0] = *enabled_irqs;
 }
 
 /*
@@ -64,7 +61,7 @@ void enter_critical(void)
 {
     if (nesting == 0)
     {
-        _enter_critical();
+        _enter_critical(&enabled_irqs_task);
     }
     ++nesting;
 }
@@ -78,8 +75,24 @@ void exit_critical(void)
     --nesting;
     if (nesting == 0)
     {
-        _exit_critical();
+        _exit_critical(&enabled_irqs_task);
     }
+}
+
+/*
+ * Enter critical section in IRQ context
+ */
+__INLINE void enter_critical_irq(void)
+{
+    _enter_critical(&enabled_irqs_irq);
+}
+
+/*
+ * Exit critical section in IRQ context
+ */
+__INLINE void exit_critical_irq(void)
+{
+    _exit_critical(&enabled_irqs_irq);
 }
 
 /*
@@ -245,6 +258,49 @@ bool read_queue(queue_t *q, uint8_t *buf, unsigned amount, int ticks_to_wait)
 }
 
 /*
+ * Read from a queue from IRQ context
+ * Amount to be read must be <= q->max - 1
+ * Must only called from interrupt context
+ */
+bool read_queue_irq(queue_t *q, uint8_t *buf, unsigned amount)
+{
+    bool got = false;
+    int level;
+    unsigned i;
+
+    enter_critical();
+    
+    /* How much data is currently in the queue? */
+    level = q->in - q->out;
+    if (level < 0)
+    {
+        level += q->max;
+    }
+    /* Can we satisfy the request for data? */
+    if (level >= amount)
+    {
+        for (i = 0; i < amount; ++i)
+        {
+            buf[i] = q->data[q->out];
+            ++q->out;
+            if (q->out >= q->max)
+            {
+                q->out -= q->max;
+            }
+        }
+        /* Success */
+        got = true;
+        if (wake_tasks_blocked_on_queue(q))
+        {
+            yield();
+        }
+    }
+    
+    exit_critical();
+    return got;
+}
+
+/*
  * Write to a queue
  * Amount to be written must be <= q->max - 1
  * ticks_to_wait special values: zero (don't wait), negative (wait forever)
@@ -304,6 +360,48 @@ bool write_queue(queue_t *q, const uint8_t *buf, unsigned amount, int ticks_to_w
         exit_critical();
     }
     
+    return put;
+}
+
+/*
+ * Write to a queue from IRQ context
+ * Amount to be written must be <= q->max - 1
+ * Must only be called from interrupt context
+ */
+bool write_queue_irq(queue_t *q, const uint8_t *buf, unsigned amount)
+{
+    bool put = false;
+    int level;
+    unsigned i;
+
+    enter_critical_irq();
+
+    /* How much data is currently in the queue? */
+    level = q->in - q->out;
+    if (level < 0)
+    {
+        level += q->max;
+    }
+    /* Can we store this amount of data? */
+    if (level + amount < q->max)                  /* We always leave 1 byte empty */
+    {
+        for (i = 0; i < amount; ++i)
+        {
+            q->data[q->in] = buf[i];
+            ++q->in;
+            if (q->in >= q->max)
+            {
+                q->in -= q->max;
+            }
+        }
+        if (wake_tasks_blocked_on_queue(q))
+        {
+            yield();
+        }
+        put = true;
+    }
+   
+    exit_critical_irq();
     return put;
 }
 

@@ -1,0 +1,8 @@
+
+Don't change NVIC interrupt masks (NVIC->ISER or ICER) while inside a critical section - the 
+changes will be undone when you leave.
+
+Queues need one more byte than the maximum you need to store, so if you need a queue to hold 16
+bytes, declare it with 17 bytes.
+
+Queues are optimised for small objects. You might want to switch to memcpy on larger objects.
