@@ -633,8 +633,8 @@ void __NO_RETURN start_rtos(uint32_t cpu_clocks_per_tick)
     NVIC->IP[YIELD_PRIO_REG] |= YIELD_PRIO;
     NVIC->ISER[0] = YIELD_BIT;
     /* Enable the timer interrupt, set it to the lowest priority */
-    NVIC->IP[TIMER_PRIO_REG] |= TIMER_PRIO;
-    NVIC->ISER[0] = TIMER_BIT;
+    NVIC->IP[TICK_PRIO_REG] |= TICK_PRIO;
+    NVIC->ISER[0] = TICK_BIT;
     /* Pend the interrupt that will yield to first ready task */
     yield();
     start_idle_task(idle_task.sp);

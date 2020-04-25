@@ -28,7 +28,16 @@ void task1_main(void *arg)
     uint32_t tick_target;
     unsigned i;
     const uint8_t my_data[2] = {'a', 'b'};
-        
+
+#ifdef BENCHMARK
+    uint32_t ticks1 = ticks;
+    while (ticks1 == ticks);
+    ticks1 = ticks;
+    for (volatile unsigned i = 0; i < 10000000; ++i);
+    uint32_t ticks2 = ticks;
+    dprintf("\nLoop took %u ticks\n", ticks2 - ticks1);
+#endif
+    
     dprintf("\nHello world!\n");
 
     tick_target = ticks;
@@ -122,6 +131,9 @@ void init_usart2(void)
     USART2->CR1 = USART_CR1_TE | USART_CR1_RE;
     USART2->BRR = GET_USART_BRR_VALUE(32000000, 115200);
     LL_USART_Enable(USART2);
+    
+    NVIC_EnableIRQ(USART2_IRQn);
+    NVIC_SetPriority(USART2_IRQn, LOW_IRQ_PRIORITY);
 }
 
 void LPUART1_IRQHandler(void)
@@ -162,7 +174,7 @@ void init_lpuart1(void)
     LL_LPUART_Enable(LPUART1);
     
     NVIC_EnableIRQ(LPUART1_IRQn);
-    NVIC_SetPriority(LPUART1_IRQn, 2);
+    NVIC_SetPriority(LPUART1_IRQn, LOW_IRQ_PRIORITY);
 }
 
 /*
@@ -180,6 +192,12 @@ void LPTIM1_IRQHandler(void)
  */
 void init_lptim(unsigned clocks_per_tick)
 {
+#ifndef NDEBUG
+    /* Stop timer when debugger stops */
+    RCC->APB2ENR |= RCC_APB2ENR_DBGEN;
+    DBGMCU->APB1FZ |= DBGMCU_APB1_FZ_DBG_LPTIMER_STOP;
+#endif
+    
     LL_RCC_SetLPTIMClockSource(LL_RCC_LPTIM1_CLKSOURCE_PCLK1);
     RCC->APB1ENR |= RCC_APB1ENR_LPTIM1EN;
     LPTIM1->IER = LPTIM_IER_ARRMIE;
@@ -193,7 +211,7 @@ int outbyte(int c)
     uint8_t data = (uint8_t)c;
     
     write_queue(&lpuart_outq, &data, 1, 0);
-    LPUART1->CR1 |= USART_CR1_TXEIE;        /* Should have a critical section: read+write */
+    LPUART1->CR1 |= USART_CR1_TXEIE;        /* Should be safe despite lack of critical section */
     return 0;
 }
 
@@ -204,7 +222,10 @@ void __NO_RETURN main(void)
     
     /* Switch to 32 MHz clock */
     LL_PLL_ConfigSystemClock_HSI(&pll_init, &clk_init);
-    
+
+    /* Enable prefetch (but not pre-read unless you're doing lots of queueing) */
+    FLASH->ACR |= FLASH_ACR_PRFTEN;
+
     init_lpuart1();
     //init_usart2();
 

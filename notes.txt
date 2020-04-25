@@ -1,8 +1,150 @@
 
-Don't change NVIC interrupt masks (NVIC->ISER or ICER) while inside a critical section - the 
-changes will be undone when you leave.
+M0RTOS - A tiny RTOS for M0(+) that support true real-time operation
+====================================================================
+
+Why M0RTOS?
+-----------
+
+Feel free to skip this section. You're probably busy, and Features is a more important section.
+
+ARM messed up when they created the M0. The goal was to strip stuff out of the V7M architecture
+to create a simpler V6M architecture that would result in smaller, cheaper chips. But they removed
+a key feature - BASEPRI - which allows an RTOS to mask all interrupts below a certain prority
+while allowing higher priority interrupt to continue unaffected. This is useful in a true real-time
+system - if you're driving a motor at 10000 RPM you can't wait for the OS to do a task switch, so
+you set BASEPRI to mask everything but the real-time interrupts, and as long as the code that 
+services those interrupts doesn't call any OS functions, everyone's happy. FreeRTOS uses this
+approach for its V7M ports (e.g. Cortex-M3) and it works well. 
+
+You might think you can just do this to work around the problem:
+
+    disable all interrupts (CPSID)
+    record which interrupts are enabled in the NVIC
+    disable all but the real-time ones
+    re-enable all interrupts (CPSIE)
+
+Ok, so we've had to mask all interrupts - but only for a really short time, and that's probably ok.
+
+But it's not that easy: SysTick and PendSV don't actually have interrupt mask bits. That's right,
+you can't mask those interrupts. Sure, you can disable SysTick, which prevents it raising an 
+interrupt, but (a) that's ugly and (b) that actually loses a small amount of time since it doesn't
+count when disabled. And it still leaves you with the problem of PendSV, which FreeRTOS uses for
+its yield function (as ARM intended).
+
+The PendSV problem is actually easier to solve: just don't use it. Use something else instead.
+Really, PendSV is just an interrupt with no hardware attached - you pend it from software. So what
+if we choose any other interrupt we're not using, and use that? Perfect. Actually, most M0 chips
+have IRQ lines in NVIC->ISER[0] that aren't even attached to any hardware - and they can still be
+pended from software: woohoo, free PendSV replacements!
+
+By the time I'd got this far with modifying FreeRTOS, I figured I might was well just write my
+own RTOS specifically aimed at the Cortex-M0 and Cortex-M0+, and M0RTOS was born.
+
+
+Features
+--------
+
+Portable to any ARM V6M CPU.
+Tiny in size - one source file and two header files, compiles to under 3KB of code. 
+Simple to understand, only a few lines of assembler.
+Support for real-time interrupts (interrupts are fully masked for just a few cycles, like maybe 5).
+Unlimited tasks and task priorities.
+No dynamic memory allocation.
+No use of standard library functions (uses CMSIS headers for portability).
+Round-robin scheduling when multiple tasks have the same priority and are runnable.
+Idle task that can be used to enter low power states.
+Queues for task-task, task-interrupt or interrupt-interrupt communication.
+Macros to make queues seem like locks.
+Wait-for-time and wait-until-time sleep functions.
+
+
+Limitations
+-----------
+
+Can't dynamically change task priority.
+No priority inheritance.
+No safety checks.
+
+
+Rules you must follow
+---------------------
+
+Don't use SysTick or PendSV.
+
+Choose an interrupt for "yield" (as a replacement for PendSV). Any interrupt in NVIC->ISER[0]
+will do, either one that's not connected to any hardware, or one you're not using. Set this
+interrupt to the lowest priority.
+
+You'll need a replacement for SysTick - any timer will do, just set it up to interrupt periodically
+and call the tick function. Set this interrupt to the lowest priority.
+
+Declare which interrupts are real-time by setting the relevant bits in REALTIME_IRQS in config.h.
+Don't call M0RTOS functions from real-time interrupt handlers.
+
+Don't change NVIC interrupt masks (NVIC->ISER) while inside a critical section - the changes will
+be undone when you leave.
 
 Queues need one more byte than the maximum you need to store, so if you need a queue to hold 16
 bytes, declare it with 17 bytes.
 
 Queues are optimised for small objects. You might want to switch to memcpy on larger objects.
+
+Don't use the lowest task priority (highest number) - that's reserved for the idle task.
+
+
+How to configure M0RTOS
+-----------------------
+
+Drop the three files into your project.
+
+Edit config.h:
+  - choose how many task priorities you want and set NUM_TASK_PRIOS to be one higher (the idle
+    task needs the lowest priority all of its own). Often one priority per task makes sense.
+  - check your chip's reference manual to see what's connected to each bit of the NVIC->ISER[0]
+  - set REALTIME_IRQS to contain the bitmap of all your real-time interrupts
+  - set YIELD_IRQ to be your chosen yield interrupt
+  - set TICK_IRQ to be your chosen tick interrupt
+
+Edit your code:
+  - do your normal start-up stuff (set up clocks, peripherals, etc)
+  - set the priority of all the interrupts you're using
+  - declare the tasks and queues you're using
+  - call add_task() for each task
+  - set up your tick timer, and make it call tick(). No need to enable the interrupt in the NVIC
+    or set the priority, M0RTOS does that for you.
+  - call start_rtos()
+
+
+Interrupt priorities
+--------------------
+
+Since V6M only has 4 interrupt priorities, your choices are fairly easy.
+
+M0RTOS runs at the lowest level, priority 3 (you can call it 192 if you prefer). By this I mean
+that the tick and yield interrupts must be set to that priority.
+
+Probably you only want one or two interrupts to run "real-time" i.e. beyond the reach of M0RTOS.
+These interrupts must have the relevant bits set in REALTIME_IRQS so M0RTOS knows not to mask
+them during a critical section. Typically you would set these to the highest priority (0) but
+in fact everything will still work as long as the yield and tick interrupts are at the lowest
+priority. But there's not a lot of point in configuring an interrupt to be real-time and then
+allowing the OS or another interrupt to block it.
+
+Other interrupts would usually be set above M0RTOS but below the real-time interrupts, so typically
+you would use priority 1 and 2 (or 64 and 128 in old money). Again, if you really want you can have
+low-priority interrupts set to the same priority as M0RTOS, they'll still work but will have a
+longer latency when a tick or yield interrupt happens.
+
+
+Task priorities
+---------------
+
+Note that task prorities use the same ordering as interrupt priorities - lowest number is the 
+highest priority, so any task with priority 0 will get to run first.
+
+You can have multiple tasks at the same priority level, they will be swapped out in a round-robin
+fashion at each timer tick. Most of the time that's not really what you want in a real-time 
+system, but I'm not judging.
+
+Note that the idle task (declared inside the M0RTOS code) operates at the lowest priority level
+(NUM_TASK_PRIOS - 1) and you should not put any other tasks on that priority.
