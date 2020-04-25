@@ -95,7 +95,7 @@ Don't use the lowest task priority (highest number) - that's reserved for the id
 How to configure M0RTOS
 -----------------------
 
-Drop the three files into your project.
+Drop the three source files into your project.
 
 Edit config.h:
   - choose how many task priorities you want and set NUM_TASK_PRIOS to be one higher (the idle
@@ -112,6 +112,8 @@ Edit your code:
   - call add_task() for each task
   - set up your tick timer, and make it call tick(). No need to enable the interrupt in the NVIC
     or set the priority, M0RTOS does that for you.
+  - add Yield_IRQHandler to startup_xxxxxx.s as the handler for your chosen yield interrupt
+    and add "IMPORT Yield_IRQHandler" otherwise the startup file won't assemble
   - call start_rtos()
 
 

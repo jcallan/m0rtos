@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <cmsis_armcc.h>
 #include "m0rtos_config.h"
 
 struct queue_s;
