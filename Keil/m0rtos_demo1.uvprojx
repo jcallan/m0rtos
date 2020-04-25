@@ -403,24 +403,24 @@
           <GroupName>RTOS</GroupName>
           <Files>
             <File>
-              <FileName>task.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\task.c</FilePath>
-            </File>
-            <File>
-              <FileName>task.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\task.h</FilePath>
-            </File>
-            <File>
-              <FileName>config.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\config.h</FilePath>
-            </File>
-            <File>
               <FileName>notes.txt</FileName>
               <FileType>5</FileType>
               <FilePath>..\notes.txt</FilePath>
+            </File>
+            <File>
+              <FileName>m0rtos.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\m0rtos.c</FilePath>
+            </File>
+            <File>
+              <FileName>m0rtos.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\m0rtos.h</FilePath>
+            </File>
+            <File>
+              <FileName>m0rtos_config.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\m0rtos_config.h</FilePath>
             </File>
           </Files>
         </Group>

@@ -2,8 +2,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "stm32l031xx.h" 
-#include "config.h"
-#include "task.h"
+#include "m0rtos.h"
 
 #define INITIAL_REGISTER_VALUE  0xdeadbeef
 

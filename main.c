@@ -7,9 +7,8 @@
 #include "stm32l0xx_ll_lpuart.h"
 #include "stm32l0xx_ll_usart.h"
 
+#include "m0rtos.h"
 #include "util.h"
-#include "config.h"
-#include "task.h"
 
 #define GET_LPUART_BRR_VALUE(UART_CLOCK, BAUDRATE)  (((UART_CLOCK * 16) + (BAUDRATE / 32)) / (BAUDRATE / 16))
 #define GET_USART_BRR_VALUE(UART_CLOCK, BAUDRATE)   (((UART_CLOCK) + (BAUDRATE / 2)) / (BAUDRATE))
