@@ -57,6 +57,7 @@ extern int add_task(task_function_t *task_function, task_t *task, uint32_t *stac
                     unsigned stack_words, unsigned priority);
 extern __NO_RETURN void start_rtos(uint32_t cpu_clocks_per_tick);
 extern void yield(void);
+extern void wake_task_realtime(task_t *task);
 extern void tick(void);
 
 #endif

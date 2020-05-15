@@ -449,6 +449,16 @@ void yield(void)
     NVIC->ISPR[0] = YIELD_BIT;
 }
 
+/*
+ * This function may be called from a real-time IRQ to wake a sleeping task
+ * If the task is not sleeping, has no effect other than a yield.
+ */
+void wake_task_realtime(task_t *task)
+{
+    task->wait_until = ticks;
+    yield();
+}
+
 uint32_t *choose_next_task(uint32_t *current_sp)
 {
     unsigned p;
@@ -603,6 +613,7 @@ __NO_RETURN void idle_task_function(void *arg)
     {
         /* spin */
         yield();
+        WFI();
     }
 }
 
