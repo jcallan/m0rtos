@@ -25,9 +25,11 @@
 */
 #define putchar(c) outbyte(c)
 
-extern int putchar(int c);
+extern void putchar(int c);
 
 #include <stdarg.h>
+#include <stdint.h>
+#include "fixed_point.h"
 
 static void printchar(char **str, int c)
 {
@@ -147,9 +149,18 @@ static int printi(char **out, int i, int b, int sg, int width, int pad, int letb
     return pc + prints(out, s, width, pad);
 }
 
+static int printfloat( char **out, void *f, int width, bool plus, int pad)
+{
+    char buf[20];
+    
+    sprint_fix32(buf, f, width, plus, pad & PAD_ZERO);
+    return prints(out, buf, 0, 0);
+}
+
 static int print(char **out, const char *format, va_list args )
 {
     int width, pad;
+    bool plus;
     int pc = 0;
     char scr[2];
     char *s;
@@ -160,6 +171,7 @@ static int print(char **out, const char *format, va_list args )
         {
             ++format;
             width = pad = 0;
+            plus = false;
             if (*format == '\0')
             {
                 break;
@@ -167,6 +179,11 @@ static int print(char **out, const char *format, va_list args )
             if (*format == '%')
             {
                 goto out;
+            }
+            if (*format == '+')
+            {
+                ++format;
+                plus = true;
             }
             if (*format == '-')
             {
@@ -220,6 +237,10 @@ static int print(char **out, const char *format, va_list args )
                 scr[1] = '\0';
                 pc += prints (out, scr, width, pad);
                 continue;
+            }
+            if ( *format == 'f' )
+            {
+                pc += printfloat (out, va_arg( args, void * ), width, plus, pad);
             }
         }
         else 

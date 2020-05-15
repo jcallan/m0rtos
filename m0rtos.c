@@ -613,7 +613,7 @@ __NO_RETURN void idle_task_function(void *arg)
     {
         /* spin */
         yield();
-        WFI();
+        __WFI();
     }
 }
 
