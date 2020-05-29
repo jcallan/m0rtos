@@ -12,6 +12,9 @@
 #include <string.h>         /* For strchr */
 #include "fixed_point.h"
 
+#define MIN(x, y) ((x) < (y) ? (x) : (y))
+#define MAX(x, y) ((x) > (y) ? (x) : (y))
+
 const fix32_t pi            = {1686629713L, 29};
 const fix32_t half_pi       = {1686629713L, 30};
 const fix32_t quarter_pi    = {1686629713L, 31};
@@ -144,6 +147,61 @@ int parse_fix32(fix32_t *ret, const char *buffer, int p_answer)
 #endif
 
 /*
+ * Calculate by how much we could shift an int32_t without changing the sign bit
+ */
+static int count_leading_space(int32_t val)
+{
+    int space = 0;
+    if (val == 0)
+    {
+        return 31;
+    }
+    if (val < 0)
+    {
+        val = -val;
+    }
+    if (val < (1u << 15))
+    {
+        val <<= 16;
+        space += 16;
+    }
+    if (val < (1u << 23))
+    {
+        val <<= 8;
+        space += 8;
+    }
+    if (val < (1u << 27))
+    {
+        val <<= 4;
+        space += 4;
+    }
+    if (val < (1u << 29))
+    {
+        val <<= 2;
+        space += 2;
+    }
+    if (val < (1u << 30))
+    {
+        space += 1;
+    }
+    
+    return space;
+}
+
+void normalise_fix32(fix32_t *a)
+{
+    int shift;
+    
+    shift = count_leading_space(a->mantissa);
+    if (a->precision + shift > 31)
+    {
+        shift = 31 - a->precision;
+    }
+    a->mantissa <<= shift;
+    a->precision += shift;
+}
+
+/*
  * The functions multiply_fix32, divide_fix32, add_fix32 and subtract_fix32
  * rely on shifting 64-bit signed types. From the armcc documentation:
  * 
@@ -158,6 +216,20 @@ void multiply_fix32(fix32_t *ret, const fix32_t *a, const fix32_t *b, int p_answ
 {
     int64_t answer;
     int shift_down;
+
+    /* Automatic precision? */
+    if (p_answer < 0)
+    {
+        p_answer = a->precision + b->precision - 31;
+        if (p_answer < 0)
+        {
+            p_answer = 0;
+        }
+        if (p_answer > 31)
+        {
+            p_answer = 31;
+        }
+    }
 
     shift_down = a->precision + b->precision - p_answer;    /* Range is -31 to +62 */
     
@@ -353,6 +425,16 @@ void add_fix32(fix32_t *ret, const fix32_t *a, const fix32_t *b, int p_answer)
 {
     int64_t a64, b64;
     
+    /* Automatic precision? */
+    if (p_answer < 0)
+    {
+        p_answer = MIN(a->precision, b->precision);
+        if (p_answer > 0)
+        {
+            --p_answer;
+        }
+    }
+    
     /* Convert the numbers to 32.32 before adding them */
     a64 = a->mantissa;
     a64 <<= 32 - a->precision;                /* Shift range is +1 to +32 */
@@ -370,6 +452,16 @@ void add_fix32(fix32_t *ret, const fix32_t *a, const fix32_t *b, int p_answer)
 void subtract_fix32(fix32_t *ret, const fix32_t *a, const fix32_t *b, int p_answer)
 {
     int64_t a64, b64;
+    
+    /* Automatic precision? */
+    if (p_answer < 0)
+    {
+        p_answer = MIN(a->precision, b->precision);
+        if (p_answer > 0)
+        {
+            --p_answer;
+        }
+    }
     
     /* Convert the numbers to 32.32 before subtracting them */
     a64 = a->mantissa;

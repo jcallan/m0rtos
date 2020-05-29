@@ -45,7 +45,7 @@ extern int parse_fix32(fix32_t *ret, const char *buffer, int p_answer);
  * These routines accomplish 
  *    ret = a o b
  * where a and b are fixed point numbers. The precision of the returned number is
- * specified in the precision argument.    All operations are performed in 64 bits.
+ * specified in the precision argument. Specify precision as -1 to use automatic precision.
  */
 extern void multiply_fix32(fix32_t *ret, const fix32_t *a, const fix32_t *b, int precision);
 extern void   divide_fix32(fix32_t *ret, const fix32_t *a, const fix32_t *b);
@@ -78,6 +78,12 @@ extern void square_root_fix32(fix32_t *ret, const fix32_t *a);
  */
 extern void abs_fix32(fix32_t *ret, const fix32_t *a);
 
+
+/*
+ * Set precision to the maximum possible
+ * Useful when using automatic precision in the routines above
+ */
+extern void normalise_fix32(fix32_t *a);
 
 /*
  * Create a fixed point number, specifying the mantissa and the precision
