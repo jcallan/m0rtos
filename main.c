@@ -8,6 +8,7 @@
 #include "stm32l0xx_ll_usart.h"
 
 #include "m0rtos.h"
+#include "float32.h"
 #include "util.h"
 
 #define GET_LPUART_BRR_VALUE(UART_CLOCK, BAUDRATE)  (((UART_CLOCK * 16) + (BAUDRATE / 32)) / (BAUDRATE / 16))
@@ -38,6 +39,7 @@ void task1_main(void *arg)
 #endif
     
     dprintf("\nHello world!\n");
+    f32_test();
 
     tick_target = ticks;
     while(1)

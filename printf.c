@@ -29,7 +29,7 @@ extern void putchar(int c);
 
 #include <stdarg.h>
 #include <stdint.h>
-#include "fixed_point.h"
+#include "float32.h"
 
 static void printchar(char **str, int c)
 {
@@ -153,7 +153,7 @@ static int printfloat( char **out, void *f, int width, bool plus, int pad)
 {
     char buf[20];
     
-    sprint_fix32(buf, f, width, plus, pad & PAD_ZERO);
+    sprint_f32(buf, f, width, plus, pad & PAD_ZERO);
     return prints(out, buf, 0, 0);
 }
 
