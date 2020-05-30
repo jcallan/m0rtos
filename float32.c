@@ -395,73 +395,90 @@ void idivide_f32(f32_t *ret, const f32_t *a, int32_t b)
     divide_f32(ret, a, &bb);
 }
 
+static void _add_or_subtract_f32(f32_t *ret, const f32_t *a, const f32_t *b, int subtract_signum)
+{
+    int shift_down, exponent, signum1, signum2;
+    uint32_t mantissa1, mantissa2, mantissa;
+    
+    /*
+     * Work out which of a and b is absolutely larger. We want to do an 
+     * unsigned addition or subtraction of the form
+     *   answer = value1 +/- value2
+     * where we know that value1 is larger
+     */
+    if (a->exponent >= b->exponent || (a->exponent == b->exponent && a->mantissa >= b->mantissa))
+    {
+        /* a is bigger, use a as value1 and b as value2 */
+        mantissa1  = a->mantissa;
+        mantissa2  = b->mantissa;
+        exponent   = a->exponent;
+        signum1    = a->signum;
+        signum2    = b->signum * subtract_signum;
+        shift_down = a->exponent - b->exponent;
+    }
+    else
+    {
+        /* b is bigger, use b as value1 and a as value2 */
+        mantissa1  = b->mantissa;
+        mantissa2  = a->mantissa;
+        exponent   = b->exponent;
+        signum1    = b->signum * subtract_signum;
+        signum2    = a->signum;
+        shift_down = b->exponent - a->exponent;
+    }
+    if (shift_down >= 32)
+    {
+        mantissa2 = 0;
+    }
+    else
+    {
+        mantissa2 >>= shift_down;
+    }
+    
+    /* Add or subtract as required */
+    if (signum1 == signum2)
+    {
+        mantissa = (mantissa1 >> 1) + (mantissa2 >> 1); /* TODO use carry bit */
+    }
+    else
+    {
+        mantissa = (mantissa1 >> 1) - (mantissa2 >> 1);
+    }
+    
+    /* Normalise the answer */
+    ++exponent;                         /* We already halved the answer above */
+    if (mantissa > 0)
+    {
+        while ((mantissa & 0x80000000) == 0)
+        {
+            mantissa <<= 1;
+            --exponent;
+        }
+    }
+        
+    ret->mantissa = mantissa;
+    ret->exponent = exponent;
+    ret->signum   = signum1;
+}
+
+void add_f32(f32_t *ret, const f32_t *a, const f32_t *b)
+{
+    _add_or_subtract_f32(ret, a, b, 1);
+}
+
+void subtract_f32(f32_t *ret, const f32_t *a, const f32_t *b)
+{
+    _add_or_subtract_f32(ret, a, b, -1);
+}
+
+void iadd_f32(f32_t *ret, const f32_t *a, int32_t b)
+{
+    f32_t bb;
+    make_f32(&bb, b, 0);
+    add_f32(ret, a, &bb);
+}
+
 #if 0
-
-void add_fix32(fix32_t *ret, const fix32_t *a, const fix32_t *b, int p_answer)
-{
-    int64_t a64, b64;
-    
-    /* Automatic precision? */
-    if (p_answer < 0)
-    {
-        p_answer = MIN(a->precision, b->precision);
-        if (p_answer > 0)
-        {
-            --p_answer;
-        }
-    }
-    
-    /* Convert the numbers to 32.32 before adding them */
-    a64 = a->mantissa;
-    a64 <<= 32 - a->precision;                /* Shift range is +1 to +32 */
-
-    b64 = b->mantissa;
-    b64 <<= 32 - b->precision;                /* Shift range is +1 to +32 */
-
-    a64 += b64;
-    a64 >>= 32 - p_answer;                    /* Shift range is +1 to +32 */
-
-    ret->mantissa  = (int32_t)a64;
-    ret->precision = p_answer;
-}
-
-void subtract_fix32(fix32_t *ret, const fix32_t *a, const fix32_t *b, int p_answer)
-{
-    int64_t a64, b64;
-    
-    /* Automatic precision? */
-    if (p_answer < 0)
-    {
-        p_answer = MIN(a->precision, b->precision);
-        if (p_answer > 0)
-        {
-            --p_answer;
-        }
-    }
-    
-    /* Convert the numbers to 32.32 before subtracting them */
-    a64 = a->mantissa;
-    a64 <<= 32 - a->precision;                /* Shift range is +1 to +32 */
-
-    b64 = b->mantissa;
-    b64 <<= 32 - b->precision;                /* Shift range is +1 to +32 */
-
-    a64 -= b64;
-    a64 >>= 32 - p_answer;                    /* Shift range is +1 to +32 */
-
-    ret->mantissa  = (int32_t)a64;
-    ret->precision = p_answer;
-}
-
-void iadd_fix32(fix32_t *ret, const fix32_t *a, int32_t b, int p_answer)
-{
-    fix32_t bb;
-
-    bb.mantissa = b;
-    bb.precision = 0;
-
-    add_fix32(ret, a, &bb, p_answer);
-}
 
 /* 
  * Uses Taylor expansion: cosine(x) = 1 - x^2/2! + x^4/4! - x^6/6! + ...
@@ -556,6 +573,8 @@ struct ff_s
     float y;
     float x_times_y;
     float x_over_y;
+    float x_plus_y;
+    float x_minus_y;
 };
 
 struct fi_s
@@ -564,6 +583,8 @@ struct fi_s
     int32_t y;
     float x_times_y;
     float x_over_y;
+    float x_plus_y;
+    float x_minus_y;
 };
 
 void f32_test(void)
@@ -574,11 +595,11 @@ void f32_test(void)
 
     static const struct ff_s test_ff[] = 
     {
-        {1.23456e-6, 1e10, 12345.6, 1.23456e-16},
+        {1.23456e-6, 1e10, 12345.6, 1.23456e-16, 1e10, -1e10},
     };
     static const struct fi_s test_fi[] =
     {
-        {1.23456e+6, 1000000000, 1.23456e15, 1.23456e-3},
+        {1.23456e+6, 1000000000, 1.23456e15, 1.23456e-3, 1001234560, -998765440},
     };
     
     for (i = 0; i < sizeof(test_ff) / sizeof(test_ff[0]); ++i)
@@ -588,25 +609,44 @@ void f32_test(void)
 
         multiply_f32(&z, &x, &y);
         get_f32_from_float(&a, test_ff[i].x_times_y);
-        dprintf("%9f x %9f = %9f, should be %9f\n", &x, &y, &z, &a);
+        dprintf("%09f x %09f = %09f, should be %09f\n", &x, &y, &z, &a);
         sleep(10);
 
         divide_f32(&z, &x, &y);
         get_f32_from_float(&a, test_ff[i].x_over_y);
-        dprintf("%9f / %9f = %9f, should be %9f\n", &x, &y, &z, &a);
+        dprintf("%09f / %09f = %09f, should be %09f\n", &x, &y, &z, &a);
+        sleep(10);
+
+        add_f32(&z, &x, &y);
+        get_f32_from_float(&a, test_ff[i].x_plus_y);
+        dprintf("%09f + %09f = %09f, should be %09f\n", &x, &y, &z, &a);
+        sleep(10);
+
+        subtract_f32(&z, &x, &y);
+        get_f32_from_float(&a, test_ff[i].x_minus_y);
+        dprintf("%09f - %09f = %09f, should be %09f\n", &x, &y, &z, &a);
         sleep(10);
 
         get_f32_from_float(&x, test_fi[i].x);
         iy = test_fi[i].y;
         imultiply_f32(&z, &x, iy);
         get_f32_from_float(&a, test_fi[i].x_times_y);
-        dprintf("%9f x %d = %9f, should be %9f\n", &x, iy, &z, &a);
+        dprintf("%09f x %d = %09f, should be %09f\n", &x, iy, &z, &a);
         sleep(10);
 
         idivide_f32(&z, &x, iy);
         get_f32_from_float(&a, test_fi[i].x_over_y);
-        dprintf("%9f / %d = %9f, should be %9f\n", &x, iy, &z, &a);
+        dprintf("%09f / %d = %09f, should be %09f\n", &x, iy, &z, &a);
         sleep(10);
 
+        iadd_f32(&z, &x, iy);
+        get_f32_from_float(&a, test_fi[i].x_plus_y);
+        dprintf("%09f + %d = %09f, should be %09f\n", &x, iy, &z, &a);
+        sleep(10);
+
+        iadd_f32(&z, &x, -iy);
+        get_f32_from_float(&a, test_fi[i].x_minus_y);
+        dprintf("%09f - %d = %09f, should be %09f\n", &x, iy, &z, &a);
+        sleep(10);
     }
 }

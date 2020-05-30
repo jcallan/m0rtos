@@ -94,7 +94,7 @@ static __inline void make_f32(f32_t *a, int32_t mantissa, int exponent)
     }
     else
     {
-        a->mantissa = mantissa;
+        a->mantissa = -mantissa;
         a->signum   = -1;
     }
     a->exponent = exponent;
