@@ -137,7 +137,7 @@ int sprint_f32(char *buffer, const f32_t *a, int decimal_places, bool plus, bool
 
     len += _print_integer(buffer, integer, plus, a->signum < 0);
     
-    if (decimal_places > 0)
+    if (decimal_places > 0 && (fraction != 0 || zeroes))
     {
         buffer[len] = '.';
         ++len;
@@ -262,7 +262,7 @@ static int count_leading_space(uint32_t val)
     return space;
 }
 
-void normalise_f32(f32_t *a)
+int normalise_f32(f32_t *a)
 {
     int shift, new_exponent;
     
@@ -274,6 +274,8 @@ void normalise_f32(f32_t *a)
     }
     a->mantissa <<= shift;
     a->exponent -= shift;
+    
+    return shift;
 }
 
 void multiply_f32(f32_t *ret, const f32_t *a, const f32_t *b)
@@ -301,14 +303,11 @@ void multiply_f32(f32_t *ret, const f32_t *a, const f32_t *b)
     normalise_f32(ret);
 }
 
-void imultiply_fix32(f32_t *ret, const f32_t *a, int32_t b, int p_answer)
+void imultiply_f32(f32_t *ret, const f32_t *a, int32_t b)
 {
     f32_t bb;
 
-    bb.mantissa = b >= 0 ? b : -b;
-    bb.signum   = b >= 0 ? 1 : -1;
-    bb.exponent = 0;
-
+    make_f32(&bb, b, 0);
     normalise_f32(&bb);
     multiply_f32(ret, a, &bb);
 }
@@ -389,17 +388,14 @@ void divide_f32(f32_t *ret, const f32_t *a, const f32_t *b)
     ret->exponent = exponent;
 }
 
-#if 0
-
-void idivide_fix32(fix32_t *ret, const fix32_t *a, int32_t b)
+void idivide_f32(f32_t *ret, const f32_t *a, int32_t b)
 {
-    fix32_t bb;
-
-    bb.mantissa = b;
-    bb.precision = 0;
-
-    divide_fix32(ret, a, &bb);
+    f32_t bb;
+    make_f32(&bb, b, 0);
+    divide_f32(ret, a, &bb);
 }
+
+#if 0
 
 void add_fix32(fix32_t *ret, const fix32_t *a, const fix32_t *b, int p_answer)
 {
@@ -554,29 +550,63 @@ void abs_f32(f32_t *ret, const f32_t *a)
 #include "util.h"
 #include "m0rtos.h"
 
+struct ff_s
+{
+    float x;
+    float y;
+    float x_times_y;
+    float x_over_y;
+};
+
+struct fi_s
+{
+    float x;
+    int32_t y;
+    float x_times_y;
+    float x_over_y;
+};
+
 void f32_test(void)
 {
     int i;
     f32_t x, y, z, a;
+    int32_t iy;
 
-    static const float test_val[1][4] = 
+    static const struct ff_s test_ff[] = 
     {
         {1.23456e-6, 1e10, 12345.6, 1.23456e-16},
     };
-    
-    for (i = 0; i < sizeof(test_val) / sizeof(test_val[0]); ++i)
+    static const struct fi_s test_fi[] =
     {
-        get_f32_from_float(&x, test_val[i][0]);
-        get_f32_from_float(&y, test_val[i][1]);
+        {1.23456e+6, 1000000000, 1.23456e15, 1.23456e-3},
+    };
+    
+    for (i = 0; i < sizeof(test_ff) / sizeof(test_ff[0]); ++i)
+    {
+        get_f32_from_float(&x, test_ff[i].x);
+        get_f32_from_float(&y, test_ff[i].y);
 
         multiply_f32(&z, &x, &y);
-        get_f32_from_float(&a, test_val[i][2]);
+        get_f32_from_float(&a, test_ff[i].x_times_y);
         dprintf("%9f x %9f = %9f, should be %9f\n", &x, &y, &z, &a);
         sleep(10);
 
         divide_f32(&z, &x, &y);
-        get_f32_from_float(&a, test_val[i][3]);
+        get_f32_from_float(&a, test_ff[i].x_over_y);
         dprintf("%9f / %9f = %9f, should be %9f\n", &x, &y, &z, &a);
         sleep(10);
+
+        get_f32_from_float(&x, test_fi[i].x);
+        iy = test_fi[i].y;
+        imultiply_f32(&z, &x, iy);
+        get_f32_from_float(&a, test_fi[i].x_times_y);
+        dprintf("%9f x %d = %9f, should be %9f\n", &x, iy, &z, &a);
+        sleep(10);
+
+        idivide_f32(&z, &x, iy);
+        get_f32_from_float(&a, test_fi[i].x_over_y);
+        dprintf("%9f / %d = %9f, should be %9f\n", &x, iy, &z, &a);
+        sleep(10);
+
     }
 }

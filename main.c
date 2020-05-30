@@ -15,10 +15,10 @@
 #define GET_USART_BRR_VALUE(UART_CLOCK, BAUDRATE)   (((UART_CLOCK) + (BAUDRATE / 2)) / (BAUDRATE))
 
 task_t task1, task2, task3, task4;
-uint32_t task1_stack[64] __ALIGNED(8);
-uint32_t task2_stack[64] __ALIGNED(8);
-uint32_t task3_stack[64] __ALIGNED(8);
-uint32_t task4_stack[64] __ALIGNED(8);
+uint32_t task1_stack[128] __ALIGNED(8);
+uint32_t task2_stack[128] __ALIGNED(8);
+uint32_t task3_stack[128] __ALIGNED(8);
+uint32_t task4_stack[128] __ALIGNED(8);
 
 DECLARE_QUEUE(queue1, 6);
 DECLARE_QUEUE(lpuart_outq, 101);

@@ -30,6 +30,7 @@ typedef struct
 } f32_t;
 
 extern void get_f32_from_float(f32_t *a, float f);
+extern int normalise_f32(f32_t *a);
 
 /* 
  * This routine prints out a floating-point number in decimal.
@@ -82,13 +83,23 @@ extern void square_root_f32(f32_t *ret, const f32_t *a);
 extern void abs_f32(f32_t *ret, const f32_t *a);
 
 /*
- * Create a floatingpoint number, specifying the mantissa exponent and signum
+ * Create a floatingpoint number, specifying the mantissa and exponent
  */
-static __inline void make_f32(f32_t *a, uint32_t mantissa, int exponent, int signum)
+static __inline void make_f32(f32_t *a, int32_t mantissa, int exponent)
 {
-    a->mantissa = mantissa;
+    if (mantissa >= 0)
+    {
+        a->mantissa = mantissa;
+        a->signum   = 1;
+    }
+    else
+    {
+        a->mantissa = mantissa;
+        a->signum   = -1;
+    }
     a->exponent = exponent;
-    a->signum   = signum;
+    
+    normalise_f32(a);
 }
 
 /*
