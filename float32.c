@@ -24,14 +24,28 @@ const f32_t third_pi      = {1124419809UL, -30, +1};
 const f32_t two_thirds_pi = {1124419809UL, -29, +1};
 const f32_t one_sixth_pi  = {1124419809UL, -31, +1};
 
-int _print_integer(char *buffer, uint32_t integer)
+int _print_integer(char *buffer, uint32_t integer, bool plus_sign, bool negative)
 {
     static const uint32_t place_val[10] = {1000000000, 100000000, 10000000, 1000000, 100000, 10000,
                                            1000, 100, 10, 1};
     uint32_t digit;
     int i, len = 0;
     bool started = false;
-    
+
+    if (negative)
+    {
+        buffer[len] = '-';
+        ++len;
+    }
+    else
+    {
+        if (plus_sign)
+        {
+            buffer[len] = '+';
+            ++len;
+        }
+    }
+            
     for (i = 0; i < 10; ++i)
     {
         digit = integer / place_val[i];
@@ -79,10 +93,10 @@ int _print_fraction(char *buffer, uint32_t fraction, int decimal_places, bool ze
 
 int sprint_f32(char *buffer, const f32_t *a, int decimal_places, bool plus, bool zeroes)
 {
-    int len = 0;
+    int exponent, len = 0;
     uint32_t integer, mantissa;
     uint32_t fraction;
-    bool scientific;
+    bool scientific, negative;
 
     if (a->signum < 0)
     {
@@ -121,7 +135,7 @@ int sprint_f32(char *buffer, const f32_t *a, int decimal_places, bool plus, bool
         }
     }
 
-    len += _print_integer(buffer, integer);
+    len += _print_integer(buffer, integer, plus, a->signum < 0);
     
     if (decimal_places > 0)
     {
@@ -134,7 +148,13 @@ int sprint_f32(char *buffer, const f32_t *a, int decimal_places, bool plus, bool
     {
         buffer[len] = 'b';
         ++len;
-        len += _print_integer(buffer + len, a->exponent + 31);
+        exponent = a->exponent + 31;
+        if (exponent < 0)
+        {
+            negative = true;
+            exponent = -exponent;
+        }
+        len += _print_integer(buffer + len, exponent, true, negative);
     }
     
     buffer[len] = 0;
@@ -256,17 +276,6 @@ void normalise_f32(f32_t *a)
     a->exponent -= shift;
 }
 
-/*
- * The functions multiply_f32, divide_f32, add_f32 and subtract_f32
- * rely on shifting 64-bit signed types. From the armcc documentation:
- * 
- * Right shifts on signed quantities are arithmetic.
- * For values of type long long, shifts outside the range 0 to 63 are undefined.
- *
- * So we don't need to worry about negative mantissas, but we do need to correct
- * for the cases where the shift amount could be negative or larger than 63.
- */
-
 void multiply_f32(f32_t *ret, const f32_t *a, const f32_t *b)
 {
     uint32_t mantissa;
@@ -300,126 +309,58 @@ void imultiply_fix32(f32_t *ret, const f32_t *a, int32_t b, int p_answer)
     bb.signum   = b >= 0 ? 1 : -1;
     bb.exponent = 0;
 
+    normalise_f32(&bb);
     multiply_f32(ret, a, &bb);
 }
 
-#if 0
-void divide_fix32(fix32_t *ret, const fix32_t *a, const fix32_t *b)
+void divide_f32(f32_t *ret, const f32_t *a, const f32_t *b)
 {
     uint32_t numerator, denominator, answer, current_bit;
-    bool negative;
-    int precision, i, gap;
+    int exponent, i;
     
-    /* Make both operands positive */
-    if (a->mantissa < 0)
+    numerator   = a->mantissa;
+    denominator = b->mantissa;
+    exponent    = a->exponent - b->exponent - 31;
+
+    /* Determine the sign of the result */
+    if (a->signum == b->signum)
     {
-        numerator = -a->mantissa;
-        negative = true;
+        ret->signum = 1;
     }
     else
     {
-        numerator = a->mantissa;
-        negative = false;
-    }
-    if (b->mantissa < 0)
-    {
-        denominator = -b->mantissa;
-        negative = !negative;
-    }
-    else
-    {
-        denominator = b->mantissa;
+        ret->signum = -1;
     }
 
     /* Check for zeroes in either numerator or denominator */
     if (denominator == 0 || numerator == 0)
     {
-        ret->mantissa  = 0;
-        ret->precision = 0;
+        ret->mantissa = 0;
+        ret->exponent = 0;
         return;
     }
     
-    /* Note precision, and shift both operands so they are at the top of the range */
-    precision = 30 + a->precision - b->precision;
-    if (numerator < (1u << 16))
-    {
-        numerator <<= 16;
-        precision += 16;
-    }
-    if (denominator < (1u << 16))
-    {
-        denominator <<= 16;
-        precision -= 16;
-    }
-    if (numerator < (1u << 24))
-    {
-        numerator <<= 8;
-        precision += 8;
-    }
-    if (denominator < (1u << 24))
-    {
-        denominator <<= 8;
-        precision -= 8;
-    }
-    if (numerator < (1u << 28))
-    {
-        numerator <<= 4;
-        precision += 4;
-    }
-    if (denominator < (1u << 28))
-    {
-        denominator <<= 4;
-        precision -= 4;
-    }
-    if (numerator < (1u << 30))
-    {
-        numerator <<= 2;
-        precision += 2;
-    }
-    if (denominator < (1u << 30))
-    {
-        denominator <<= 2;
-        precision -= 2;
-    }
-    if (numerator < (1u << 31))
-    {
-        numerator <<= 1;
-        precision += 1;
-    }
-    if (denominator < (1u << 31))
-    {
-        denominator <<= 1;
-        precision -= 1;
-    }
     /* We want the denominator as big as possible, but not bigger than the numerator */
     if (denominator > numerator)
     {
         denominator >>= 1;
-        ++precision;
+        --exponent;
     }
     
     /* Check for overflow */
-    if (precision < 0)
+    if (exponent > INT8_MAX)
     {
-        ret->mantissa  = (negative ? INT32_MIN : INT32_MAX);
-        ret->precision = 0;
+        ret->mantissa = UINT32_MAX;
+        ret->exponent = INT8_MAX;
         return;
     }
+    
     /* Check for underflow */
-    if (precision > 31)
+    if (exponent < INT8_MIN)
     {
-        gap = precision - 31;
-        if (gap > 31)
-        {
-            ret->mantissa  = 0;
-            ret->precision = 0;
-            return;
-        }
-        precision -= gap;
-    }
-    else
-    {
-        gap = 0;
+        ret->mantissa = 0;
+        ret->exponent = 0;
+        return;
     }
     
     /*
@@ -428,7 +369,7 @@ void divide_fix32(fix32_t *ret, const fix32_t *a, const fix32_t *b)
      * This can be made slightly more accurate by using 64 bit values, e.g:
      *     uint64_t numerator64   = ((uint64_t)numerator)   << 32;
      *     uint64_t denominator64 = ((uint64_t)denominator) << 32;
-     * But this costs quite a lot more cycles, perhaps 900 vs 450.
+     * But this costs quite a lot more cycles.
      */
     answer = 0;
     current_bit = 0x80000000u;
@@ -443,19 +384,12 @@ void divide_fix32(fix32_t *ret, const fix32_t *a, const fix32_t *b)
         denominator >>= 1;
         current_bit >>= 1;
     }
-    
-    /* Fix up the answer - shift down by at least one to make room for the sign bit */
-    answer >>= gap + 1;
-    if (negative)
-    {
-        ret->mantissa = -(int32_t)answer;
-    }
-    else
-    {
-        ret->mantissa = (int32_t)answer;
-    }
-    ret->precision = precision;
+
+    ret->mantissa = answer;
+    ret->exponent = exponent;
 }
+
+#if 0
 
 void idivide_fix32(fix32_t *ret, const fix32_t *a, int32_t b)
 {
@@ -618,16 +552,31 @@ void abs_f32(f32_t *ret, const f32_t *a)
 }
 
 #include "util.h"
+#include "m0rtos.h"
 
 void f32_test(void)
 {
-    
-    f32_t x, y, z;
+    int i;
+    f32_t x, y, z, a;
 
-    get_f32_from_float(&x, 1.23456e-6);
-    get_f32_from_float(&y, 1e10);
+    static const float test_val[1][4] = 
+    {
+        {1.23456e-6, 1e10, 12345.6, 1.23456e-16},
+    };
     
-    multiply_f32(&z, &x, &y);
-    
-    dprintf("%9f x %9f = %9f\n", &x, &y, &z);
+    for (i = 0; i < sizeof(test_val) / sizeof(test_val[0]); ++i)
+    {
+        get_f32_from_float(&x, test_val[i][0]);
+        get_f32_from_float(&y, test_val[i][1]);
+
+        multiply_f32(&z, &x, &y);
+        get_f32_from_float(&a, test_val[i][2]);
+        dprintf("%9f x %9f = %9f, should be %9f\n", &x, &y, &z, &a);
+        sleep(10);
+
+        divide_f32(&z, &x, &y);
+        get_f32_from_float(&a, test_val[i][3]);
+        dprintf("%9f / %9f = %9f, should be %9f\n", &x, &y, &z, &a);
+        sleep(10);
+    }
 }
