@@ -26,16 +26,18 @@ const f32_t one_sixth_pi  = {1124419809UL, -31, +1};
 
 int _print_integer(char *buffer, uint32_t integer)
 {
-    uint32_t place_val, digit;
-    int len = 0;
+    static const uint32_t place_val[10] = {1000000000, 100000000, 10000000, 1000000, 100000, 10000,
+                                           1000, 100, 10, 1};
+    uint32_t digit;
+    int i, len = 0;
     bool started = false;
     
-    for (place_val = 1000000000; place_val >= 1; place_val /= 10)
+    for (i = 0; i < 10; ++i)
     {
-        digit = integer / place_val;
-        if (started || (digit > 0) || (place_val == 1))
+        digit = integer / place_val[i];
+        if (started || (digit > 0) || (i == 9))
         {
-            integer -= digit * place_val;
+            integer -= digit * place_val[i];
             buffer[len] = '0' + digit;
             ++len;
             started = true;
@@ -51,8 +53,7 @@ int _print_fraction(char *buffer, uint32_t fraction, int decimal_places, bool ze
                                        2147483648u, 2576980377u, 3006477107u, 3435973836u,
                                        3865470566u};
     unsigned place;
-    int i;
-    int len = 0;
+    int i, len = 0;
                                        
     for (place = 0; place < decimal_places; ++place)
     {
