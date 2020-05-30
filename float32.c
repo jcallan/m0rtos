@@ -24,21 +24,65 @@ const f32_t third_pi      = {1124419809UL, -30, +1};
 const f32_t two_thirds_pi = {1124419809UL, -29, +1};
 const f32_t one_sixth_pi  = {1124419809UL, -31, +1};
 
-int sprint_f32(char *buffer, const f32_t *a, int decimal_places, bool plus, bool zeroes)
+int _print_integer(char *buffer, uint32_t integer)
+{
+    uint32_t place_val, digit;
+    int len = 0;
+    bool started = false;
+    
+    for (place_val = 1000000000; place_val >= 1; place_val /= 10)
+    {
+        digit = integer / place_val;
+        if (started || (digit > 0) || (place_val == 1))
+        {
+            integer -= digit * place_val;
+            buffer[len] = '0' + digit;
+            ++len;
+            started = true;
+        }
+    }
+    
+    return len;
+}
+
+int _print_fraction(char *buffer, uint32_t fraction, int decimal_places, bool zeroes)
 {
     static const uint32_t point[10] = {0, 429496729u, 858993459u, 1288490188u, 1717986918u,
                                        2147483648u, 2576980377u, 3006477107u, 3435973836u,
                                        3865470566u};
-    int len = 0, i, started = 0;
-    uint32_t integer, mantissa;
-    uint32_t fraction, place_val, digit, place;
-
-    if (a->exponent > 0 || a->exponent < -64)
+    unsigned place;
+    int i;
+    int len = 0;
+                                       
+    for (place = 0; place < decimal_places; ++place)
     {
-        buffer[len] = 'E';  /* TODO: print as AeB */
-        ++len;
-        goto quit;
+        if (fraction == 0 && !zeroes)
+        {
+            break;
+        }
+        for (i = 9; i >= 0; --i)
+        {
+            if (fraction >= point[i])
+            {
+                fraction -= point[i];
+                buffer[len] = '0' + i;
+                ++len;
+                break;
+            }
+        }
+        fraction *= 10;
     }
+    
+    return len;
+}
+
+int sprint_f32(char *buffer, const f32_t *a, int decimal_places, bool plus, bool zeroes)
+{
+    int len = 0;
+    uint32_t integer, mantissa;
+    uint32_t fraction;
+    bool scientific;
+
     if (a->signum < 0)
     {
         buffer[len] = '-';
@@ -52,55 +96,46 @@ int sprint_f32(char *buffer, const f32_t *a, int decimal_places, bool plus, bool
             ++len;
         }
     }
-    mantissa = a->mantissa;
-    integer  = mantissa >> -a->exponent;
-    if (a->exponent >= -32)
+    
+    if (a->exponent > 0 || a->exponent < -64)
     {
-        fraction = mantissa << (32 + a->exponent);
+        /* Big/small number, print in exponent notation */
+        scientific = true;
+        integer = 1;
+        fraction = a->mantissa << 1;
     }
     else
     {
-        fraction = mantissa >> (-32 - a->exponent);
-    }
-
-    for (place_val = 1000000000; place_val >= 1; place_val /= 10)
-    {
-        digit = integer / place_val;
-        if (started || (digit > 0) || (place_val == 1))
+        /* Normal size number, print in decimal */
+        scientific = false;
+        mantissa = a->mantissa;
+        integer  = mantissa >> -a->exponent;
+        if (a->exponent >= -32)
         {
-            integer -= digit * place_val;
-            buffer[len] = '0' + digit;
-            ++len;
-            started = 1;
+            fraction = mantissa << (32 + a->exponent);
+        }
+        else
+        {
+            fraction = mantissa >> (-32 - a->exponent);
         }
     }
+
+    len += _print_integer(buffer, integer);
     
     if (decimal_places > 0)
     {
         buffer[len] = '.';
         ++len;
-
-        for (place = 0; place < decimal_places; ++place)
-        {
-            if (fraction == 0 && !zeroes)
-            {
-                break;
-            }
-            for (i = 9; i >= 0; --i)
-            {
-                if (fraction >= point[i])
-                {
-                    fraction -= point[i];
-                    buffer[len] = '0' + i;
-                    ++len;
-                    break;
-                }
-            }
-            fraction *= 10;
-        }
+        len += _print_fraction(buffer + len, fraction, decimal_places, zeroes);
     }
 
-quit:
+    if (scientific)
+    {
+        buffer[len] = 'b';
+        ++len;
+        len += _print_integer(buffer + len, a->exponent + 31);
+    }
+    
     buffer[len] = 0;
     return len;
 }
@@ -593,5 +628,5 @@ void f32_test(void)
     
     multiply_f32(&z, &x, &y);
     
-    dprintf("%9f x %1f = %6f\n", &x, &y, &z);
+    dprintf("%9f x %9f = %9f\n", &x, &y, &z);
 }
