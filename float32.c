@@ -13,6 +13,8 @@
 #include <string.h>         /* For strchr */
 #include "float32.h"
 
+#define INCLUDE_F32_TESTS       1
+
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 
@@ -161,52 +163,76 @@ int sprint_f32(char *buffer, const f32_t *a, int decimal_places, bool plus, bool
     return len;
 }
 
-#if 0
-int parse_fix32(fix32_t *ret, const char *buffer, int p_answer)
+int _get_integer(const char *buffer, uint32_t *integer)
 {
-    int rc = -1, fraction_length = 0, consumed;
-    const char *decimal_ptr = NULL;
-    int32_t integer_part, fraction_part = 0;
-    uint32_t fraction_divider = 1;
+    int len = 0, total = 0;
+    char digit;
     
-    consumed = get_integer(buffer, &integer_part);
+    while (len < 9)
+    {
+        digit = buffer[len];
+        if (digit >= '0' && digit <= '9')
+        {
+            total *= 10;
+            total += digit - '0';
+        }
+        else
+        {
+            break;
+        }
+        ++len;
+    }
+    
+    *integer = total;
+    return len;
+}
+
+int parse_f32(f32_t *ret, const char *buffer)
+{
+    int consumed;
+    uint32_t integer_part, fraction_part = 0;
+    uint32_t fraction_divider = 1;
+    int signum = 1, decimal_len = 0;
+    
+    consumed = 0;
+    while (buffer[consumed] == ' ' || buffer[consumed] == '\t')
+    {
+        ++consumed;
+    }
+    if (buffer[consumed] == '+')
+    {
+        ++consumed;
+    }
+    if (buffer[consumed] == '-')
+    {
+        ++consumed;
+        signum = -1;
+    }
+    consumed += _get_integer(&buffer[consumed], &integer_part);
     if ((consumed > 0) && (buffer[consumed] == '.'))
     {
         ++consumed;
-        decimal_ptr = &buffer[consumed];
-        consumed += get_integer(decimal_ptr, &fraction_part);
+        decimal_len = _get_integer(&buffer[consumed], &fraction_part);
+        consumed += decimal_len;
     }
 
-    if (ret > 0)
+    if (decimal_len > 0 && decimal_len <= 9)
     {
-        if (decimal_ptr)
+        /* Find divisor for fraction part */
+        while (decimal_len--)
         {
-            /* Find length of fraction part */
-            while ((decimal_ptr[fraction_length] >= '0') && (decimal_ptr[fraction_length] <= '9'))
-            {
-                fraction_divider *= 10;
-                ++fraction_length;
-                if (fraction_length >= 9)
-                {
-                    break;
-                }
-            }
+            fraction_divider *= 10;
         }
-
-        /* Add the integer and fraction parts together */
-        if (integer_part < 0)
-        {
-            fraction_part = -fraction_part;
-        }
-        make_fix32(ret, fraction_part, 0);
-        idivide_fix32(ret, ret, fraction_divider, 31);
-        iadd_fix32(ret, ret, integer_part, p_answer);
-        rc = consumed;
     }
 
-    return rc;
+    /* Add the integer and fraction parts together */
+    make_f32(ret, fraction_part, 0);
+    idivide_f32(ret, ret, fraction_divider);
+    iadd_f32(ret, ret, integer_part);
+    ret->signum = signum;
+    
+    return consumed;
 }
-#endif
 
 /*
  * Turn a float into an f32_t
@@ -262,10 +288,16 @@ static int count_leading_space(uint32_t val)
     return space;
 }
 
-int normalise_f32(f32_t *a)
+void normalise_f32(f32_t *a)
 {
     int shift, new_exponent;
     
+    /* Zero is a kind of denormal value */
+    if (a->mantissa == 0)
+    {
+        a->exponent = INT8_MIN;
+        return;
+    }
     shift = count_leading_space(a->mantissa);
     new_exponent = a->exponent - shift;
     if (new_exponent < INT8_MIN)
@@ -275,7 +307,7 @@ int normalise_f32(f32_t *a)
     a->mantissa <<= shift;
     a->exponent -= shift;
     
-    return shift;
+    return;
 }
 
 void multiply_f32(f32_t *ret, const f32_t *a, const f32_t *b)
@@ -286,6 +318,8 @@ void multiply_f32(f32_t *ret, const f32_t *a, const f32_t *b)
     mantissa = ((uint64_t)a->mantissa * b->mantissa) >> 32;
     exponent = a->exponent + b->exponent + 32;
     signum   = (a->signum == b->signum ? 1 : -1);
+    
+    /* Check for overflow/underflow and saturate appropriately */
     if (exponent > INT8_MAX)
     {
         exponent = INT8_MAX;
@@ -293,7 +327,7 @@ void multiply_f32(f32_t *ret, const f32_t *a, const f32_t *b)
     }
     if (exponent < INT8_MIN)
     {
-        exponent = 0;
+        exponent = INT8_MIN;
         mantissa = 0;
     }
 
@@ -346,19 +380,17 @@ void divide_f32(f32_t *ret, const f32_t *a, const f32_t *b)
         --exponent;
     }
     
-    /* Check for overflow */
+    /* Check for overflow/underflow and saturate appropriately */
     if (exponent > INT8_MAX)
     {
         ret->mantissa = UINT32_MAX;
         ret->exponent = INT8_MAX;
         return;
     }
-    
-    /* Check for underflow */
     if (exponent < INT8_MIN)
     {
         ret->mantissa = 0;
-        ret->exponent = 0;
+        ret->exponent = INT8_MIN;
         return;
     }
     
@@ -455,6 +487,10 @@ static void _add_or_subtract_f32(f32_t *ret, const f32_t *a, const f32_t *b, int
             --exponent;
         }
     }
+    else
+    {
+        exponent = INT8_MIN;
+    }
         
     ret->mantissa = mantissa;
     ret->exponent = exponent;
@@ -478,62 +514,62 @@ void iadd_f32(f32_t *ret, const f32_t *a, int32_t b)
     add_f32(ret, a, &bb);
 }
 
-#if 0
-
 /* 
  * Uses Taylor expansion: cosine(x) = 1 - x^2/2! + x^4/4! - x^6/6! + ...
  * We assume that -pi/2 <= a <= pi/2
  */
-void cosine_fix32(fix32_t *ret, const fix32_t *a)
+void cosine_f32(f32_t *ret, const f32_t *a)
 {
-    fix32_t x2, x4, x6, x8, x10;
+    f32_t x2, x4, x6, x8, x10;
 
     /* Calculate the powers of x we need - will always be non-negative */
-    multiply_fix32(&x2,  a,   a,   29);    /* Largest case  2, hence 29 bits of precision */
-    multiply_fix32(&x4,  &x2, &x2, 28);    /* Largest case  6, hence 28 bits of precision */
-    multiply_fix32(&x6,  &x4, &x2, 27);    /* Largest case 15, hence 27 bits of precision */
-    multiply_fix32(&x8,  &x4, &x4, 25);    /* Largest case 37, hence 25 bits of precision */
-    multiply_fix32(&x10, &x4, &x6, 24);    /* Largest case 91, hence 24 bits of precision */
+    multiply_f32(&x2,  a,   a  );
+    multiply_f32(&x4,  &x2, &x2);
+    multiply_f32(&x6,  &x4, &x2);
+    multiply_f32(&x8,  &x4, &x4);
+    multiply_f32(&x10, &x4, &x6);
 
     /* Divide each term by the relevant factorial */
-    idivide_fix32(&x2,  &x2,  2      );
-    idivide_fix32(&x4,  &x4,  24     );
-    idivide_fix32(&x6,  &x6,  720    );
-    idivide_fix32(&x8,  &x8,  40320  );
-    idivide_fix32(&x10, &x10, 3628800);
+    /* TODO: precalculate factorials */
+    idivide_f32(&x2,  &x2,  2      );
+    idivide_f32(&x4,  &x4,  24     );
+    idivide_f32(&x6,  &x6,  720    );
+    idivide_f32(&x8,  &x8,  40320  );
+    idivide_f32(&x10, &x10, 3628800);
 
     /* Add up the series */
-    make_fix32(ret, 1, 0);
-    subtract_fix32(ret, ret, &x2,  30);
-    add_fix32     (ret, ret, &x4,  30);
-    subtract_fix32(ret, ret, &x6,  30);
-    add_fix32     (ret, ret, &x8,  30);
-    subtract_fix32(ret, ret, &x10, 30);
+    make_f32(ret, 1, 0);
+    subtract_f32(ret, ret, &x2 );
+    add_f32     (ret, ret, &x4 );
+    subtract_f32(ret, ret, &x6 );
+    add_f32     (ret, ret, &x8 );
+    subtract_f32(ret, ret, &x10);
     
     /* Trim off any negative answers, since this is due to inaccuracy */
-    if (is_negative_fix32(ret))
+    if (is_negative_f32(ret))
     {
-        ret->mantissa = 0L;
+        ret->signum   = 1;
+        ret->mantissa = 0;
     }
 }
 
 /*
- * Mantissa must be positive!
+ * Argument should be positive (sign of argument is ignored).
  * Code adapted from the C Snippets Archive (public domain).
  */
-void square_root_fix32(fix32_t *ret, const fix32_t *a)
+void square_root_f32(f32_t *ret, const f32_t *a)
 {
-    uint32_t x = a->mantissa;
-    int precision = a->precision;
+    uint32_t x   = a->mantissa;
+    int exponent = a->exponent;
     uint32_t acc = 0L;          /* accumulator   */
     uint32_t rem = 0L;          /* remainder     */
     uint32_t est = 0L;          /* trial product */
     int i;
 
-    if (a->precision & 1)
+    if (a->exponent & 1)
     {
         x >>= 1;
-        precision -= 1;
+        exponent += 1;
     }
     for (i = 0; i < 32; ++i)
     {
@@ -547,15 +583,10 @@ void square_root_fix32(fix32_t *ret, const fix32_t *a)
             ++acc;
         }
     }
-    if (acc > INT32_MAX)
-    {
-        acc >>= 1;
-        precision -= 2;     /* subtract 2 because it is about to be halved */
-    }
-    ret->mantissa = (int32_t)acc;
-    ret->precision = (precision / 2) + 16;
+    ret->mantissa = acc;
+    ret->exponent = exponent >> 1;
+    normalise_f32(ret);
 }
-#endif
 
 void abs_f32(f32_t *ret, const f32_t *a)
 {
@@ -564,6 +595,49 @@ void abs_f32(f32_t *ret, const f32_t *a)
     ret->signum   = 1;
 }
 
+bool is_ge_f32(const f32_t *a, const f32_t *b)
+{
+    if (a->signum > 0)
+    {
+        if (b->signum > 0)          /* both positive */
+        {
+            if (a->exponent > b->exponent)
+            {
+                return true;
+            }
+            if (a->exponent < b->exponent)
+            {
+                return false;
+            }
+            return (a->mantissa >= b->mantissa);
+        }
+        else                        /* a postive, b negative */
+        {
+            return true;
+        }
+    }
+    else
+    {
+        if (b->signum > 0)          /* a negative, b positive */
+        {
+            return false;
+        }
+        else                        /* both negative */
+        {
+            if (a->exponent < b->exponent)
+            {
+                return true;
+            }
+            if (a->exponent > b->exponent)
+            {
+                return false;
+            }
+            return (a->mantissa <= b->mantissa);
+        }
+    }
+}
+
+#if INCLUDE_F32_TESTS
 #include "util.h"
 #include "m0rtos.h"
 
@@ -587,6 +661,39 @@ struct fi_s
     float x_minus_y;
 };
 
+static const f32_t max_error = {0x80000000, -54, 1};
+
+static bool close_enough(const f32_t *z, const f32_t *a)
+{
+    f32_t error;
+    
+    divide_f32(&error, z, a);
+    iadd_f32(&error, &error, -1);
+    abs_f32(&error, &error);
+    
+    return is_ge_f32(&max_error, &error);
+}
+
+static void check_answer_ff(f32_t *x, f32_t *y, f32_t *z, f32_t *a, const char *op)
+{
+    bool pass;
+    
+    pass = close_enough(z, a);
+    
+    dprintf("%09f %s %09f = %09f, should be %09f, %s\n", x, op, y, z, a, pass ? "PASS" : "FAIL");
+    sleep(10);
+}
+
+static void check_answer_fi(f32_t *x, int32_t iy, f32_t *z, f32_t *a, const char *op)
+{
+    bool pass;
+    
+    pass = close_enough(z, a);
+    
+    dprintf("%09f %s %d = %09f, should be %09f, %s\n", x, op, iy, z, a, pass ? "PASS" : "FAIL");
+    sleep(10);
+}
+
 void f32_test(void)
 {
     int i;
@@ -609,44 +716,41 @@ void f32_test(void)
 
         multiply_f32(&z, &x, &y);
         get_f32_from_float(&a, test_ff[i].x_times_y);
-        dprintf("%09f x %09f = %09f, should be %09f\n", &x, &y, &z, &a);
-        sleep(10);
+        check_answer_ff(&x, &y, &z, &a, "x");
 
         divide_f32(&z, &x, &y);
         get_f32_from_float(&a, test_ff[i].x_over_y);
-        dprintf("%09f / %09f = %09f, should be %09f\n", &x, &y, &z, &a);
-        sleep(10);
+        check_answer_ff(&x, &y, &z, &a, "/");
 
         add_f32(&z, &x, &y);
         get_f32_from_float(&a, test_ff[i].x_plus_y);
-        dprintf("%09f + %09f = %09f, should be %09f\n", &x, &y, &z, &a);
-        sleep(10);
+        check_answer_ff(&x, &y, &z, &a, "+");
 
         subtract_f32(&z, &x, &y);
         get_f32_from_float(&a, test_ff[i].x_minus_y);
-        dprintf("%09f - %09f = %09f, should be %09f\n", &x, &y, &z, &a);
-        sleep(10);
+        check_answer_ff(&x, &y, &z, &a, "-");
+    }
 
+    for (i = 0; i < sizeof(test_fi) / sizeof(test_fi[0]); ++i)
+    {
         get_f32_from_float(&x, test_fi[i].x);
         iy = test_fi[i].y;
+
         imultiply_f32(&z, &x, iy);
         get_f32_from_float(&a, test_fi[i].x_times_y);
-        dprintf("%09f x %d = %09f, should be %09f\n", &x, iy, &z, &a);
-        sleep(10);
+        check_answer_fi(&x, iy, &z, &a, "x");
 
         idivide_f32(&z, &x, iy);
         get_f32_from_float(&a, test_fi[i].x_over_y);
-        dprintf("%09f / %d = %09f, should be %09f\n", &x, iy, &z, &a);
-        sleep(10);
+        check_answer_fi(&x, iy, &z, &a, "/");
 
         iadd_f32(&z, &x, iy);
         get_f32_from_float(&a, test_fi[i].x_plus_y);
-        dprintf("%09f + %d = %09f, should be %09f\n", &x, iy, &z, &a);
-        sleep(10);
+        check_answer_fi(&x, iy, &z, &a, "+");
 
         iadd_f32(&z, &x, -iy);
         get_f32_from_float(&a, test_fi[i].x_minus_y);
-        dprintf("%09f - %d = %09f, should be %09f\n", &x, iy, &z, &a);
-        sleep(10);
+        check_answer_fi(&x, iy, &z, &a, "-");
     }
 }
+#endif /* INCLUDE_F32_TESTS */

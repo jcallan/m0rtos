@@ -30,7 +30,7 @@ typedef struct
 } f32_t;
 
 extern void get_f32_from_float(f32_t *a, float f);
-extern int normalise_f32(f32_t *a);
+extern void normalise_f32(f32_t *a);
 
 /* 
  * This routine prints out a floating-point number in decimal.
@@ -41,10 +41,10 @@ extern int sprint_f32(char *buffer, const f32_t *a, int decimal_places, bool plu
  * This routine scans a string for a floating point value, and writes it into a f32_t
  * It returns the number of characters consumed if successful, otherwise negative.
  * At most 9 decimal places are used.
- * Number must be of the form [-]nnnn.nnnnnnnn
+ * Number must be of the form "  [+-]nnnn.nnnnnnnn"
  *   ie optional whitespace and sign, at least one digit, decimal point, at least one digit
  */
-extern int parse_f32(f32_t *ret, const char *buffer, int p_answer);
+extern int parse_f32(f32_t *ret, const char *buffer);
 
 /*
  * These routines accomplish 
@@ -81,6 +81,11 @@ extern void square_root_f32(f32_t *ret, const f32_t *a);
  * Return the absolute value of a floating-point number
  */
 extern void abs_f32(f32_t *ret, const f32_t *a);
+
+/*
+ * Decide whether a >= b
+ */
+extern bool is_ge_f32(const f32_t *a, const f32_t *b);
 
 /*
  * Create a floatingpoint number, specifying the mantissa and exponent
