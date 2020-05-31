@@ -788,6 +788,7 @@ void f32_test(void)
     int i;
     f32_t x, y, z, a;
     int32_t iy;
+    uint32_t ticks1, ticks2;
 
     for (i = 0; i < sizeof(test_ff) / sizeof(test_ff[0]); ++i)
     {
@@ -861,5 +862,47 @@ void f32_test(void)
         get_f32_from_float(&a, test_square_root[i].answer);
         check_answer_ff(&x, &z, &a, "square_root");
     }
+
+    
+    ticks1 = ticks;
+    while (ticks1 == ticks);
+    ticks1 = ticks;
+    for (i = 0; i < 32000; ++i)
+    {
+        add_f32(&z, &x, &y);
+    }
+    ticks2 = ticks;
+    dprintf("Add took %u ticks\n", ticks2 - ticks1);
+    
+    ticks1 = ticks;
+    while (ticks1 == ticks);
+    ticks1 = ticks;
+    for (i = 0; i < 32000; ++i)
+    {
+        multiply_f32(&z, &x, &y);
+    }
+    ticks2 = ticks;
+    dprintf("Multiply took %u ticks\n", ticks2 - ticks1);
+    
+    ticks1 = ticks;
+    while (ticks1 == ticks);
+    ticks1 = ticks;
+    for (i = 0; i < 32000; ++i)
+    {
+        divide_f32(&z, &x, &y);
+    }
+    ticks2 = ticks;
+    dprintf("Divide took %u ticks\n", ticks2 - ticks1);
+
+    ticks1 = ticks;
+    while (ticks1 == ticks);
+    ticks1 = ticks;
+    for (i = 0; i < 32000; ++i)
+    {
+        square_root_f32(&z, &x);
+    }
+    ticks2 = ticks;
+    dprintf("Square root took %u ticks\n", ticks2 - ticks1);
+
 }
 #endif /* INCLUDE_F32_TESTS */
