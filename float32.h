@@ -15,8 +15,8 @@
 #include <stdbool.h>
 
 /*
- * A floating-point number is stored as an unsigned 32-bit mantissa
- * and an exponent value (-128 to +127).
+ * A floating-point number is stored as an unsigned 32-bit mantissa,
+ * an exponent value (-128 to +127) and a signum (+1 or -1).
  * So  (0x120000000, -17,  1) represents the number 2304.0
  * and (0xff800000,   24, -1) represents the number -71916856549572608.0
  * and (0x3456789a,  -70,  1) represents the number 7.437645554e-13
@@ -26,7 +26,6 @@ typedef struct
     uint32_t mantissa;
     int8_t   exponent;
     int8_t   signum;
-    int16_t  pad;
 } f32_t;
 
 extern void get_f32_from_float(f32_t *a, float f);
@@ -119,6 +118,6 @@ static __inline int is_negative_f32(const f32_t *a)
 
 extern void f32_test(void);
 
-extern const f32_t pi, half_pi, quarter_pi, two_pi, third_pi, two_thirds_pi, one_sixth_pi;
+extern const f32_t pi, half_pi, quarter_pi, two_pi, one_third_pi, two_thirds_pi, one_sixth_pi;
 
 #endif /* FLOAT32_H_ */

@@ -18,13 +18,13 @@
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 
-const f32_t pi            = {1686629713UL, -29, +1};     /* TODO: one more bit of precision possible */
-const f32_t half_pi       = {1686629713UL, -30, +1};
-const f32_t quarter_pi    = {1686629713UL, -31, +1};
-const f32_t two_pi        = {1686629713UL, -28, +1};
-const f32_t third_pi      = {1124419809UL, -30, +1};
-const f32_t two_thirds_pi = {1124419809UL, -29, +1};
-const f32_t one_sixth_pi  = {1124419809UL, -31, +1};
+const f32_t pi            = {3373259426UL, -30, +1};
+const f32_t half_pi       = {3373259426UL, -31, +1};
+const f32_t quarter_pi    = {3373259426UL, -32, +1};
+const f32_t two_pi        = {3373259426UL, -29, +1};
+const f32_t one_third_pi  = {2248839617UL, -31, +1};
+const f32_t two_thirds_pi = {2248839617UL, -30, +1};
+const f32_t one_sixth_pi  = {2248839617UL, -32, +1};
 
 int _print_integer(char *buffer, uint32_t integer, bool plus_sign, bool negative)
 {
@@ -114,7 +114,7 @@ int sprint_f32(char *buffer, const f32_t *a, int decimal_places, bool plus, bool
         }
     }
     
-    if (a->exponent > 0 || a->exponent < -64)
+    if (a->mantissa != 0 && (a->exponent > 0 || a->exponent < -64))
     {
         /* Big/small number, print in exponent notation */
         scientific = true;
@@ -236,18 +236,35 @@ int parse_f32(f32_t *ret, const char *buffer)
 
 /*
  * Turn a float into an f32_t
+ *
+ * Not all floats are representable as f32_t:
+ *   exponent < 29  (i.e float smaller than 2^-98)
+ *   infinity
+ *   NaN
+ *   subnormal numbers
  */
 void get_f32_from_float(f32_t *a, float f)
 {
     uint32_t val;
+    int exponent;
 
     /* Read the 32 bits of the float into val */
     val = *(uint32_t *)&f;
     
     /* Now pick out the mantissa, exponent and sign */
     a->mantissa = ((val & 0x007fffffu) <<  8) | 0x80000000u;
-    a->exponent = ((val & 0x7f800000u) >> 23) - 158;
+    exponent    = ((val & 0x7f800000u) >> 23);
     a->signum   =  (val & 0x80000000u) ? -1 : +1;
+    
+    if (exponent == 0)
+    {
+        a->exponent = INT8_MIN;
+        a->mantissa = 0;
+    }
+    else
+    {
+        a->exponent =  exponent - 158;
+    }
 }
 
 /*
@@ -366,10 +383,16 @@ void divide_f32(f32_t *ret, const f32_t *a, const f32_t *b)
     }
 
     /* Check for zeroes in either numerator or denominator */
-    if (denominator == 0 || numerator == 0)
+    if (numerator == 0)
     {
+        ret->exponent = INT8_MIN;
         ret->mantissa = 0;
-        ret->exponent = 0;
+        return;
+    }
+    if (denominator == 0)
+    {
+        ret->exponent = INT8_MAX;
+        ret->mantissa = UINT32_MAX;
         return;
     }
     
@@ -647,8 +670,12 @@ struct ff_s
     float y;
     float x_times_y;
     float x_over_y;
+    float y_over_x;
     float x_plus_y;
     float x_minus_y;
+    float y_minus_x;
+    bool  x_ge_y;
+    bool  y_ge_x;
 };
 
 struct fi_s
@@ -661,36 +688,86 @@ struct fi_s
     float x_minus_y;
 };
 
+struct f_s
+{
+    float x;
+    float answer;
+};
+
+static const struct ff_s test_ff[] = 
+{
+    /*   x        y      x*y      x/y            y/x         x+y     x-y   y-x   x>=y    y>=x */
+    {1.23456e-6, 1e10, 12345.6, 1.23456e-16,  8.10005184e15, 1e10, -1e10, 1e10, false, true},
+};
+static const struct fi_s test_fi[] =
+{
+    /*   x          y         x*y         x/y            x+y          x-y    */
+    {1.23456e+6, 1000000000, 1.23456e15, 1.23456e-3,   1001234560, -998765440},
+};
+static const struct f_s test_cosine[] = 
+{
+    /* x         cosine(x) */
+    {0.0,          1.0},
+};
+
 static const f32_t max_error = {0x80000000, -54, 1};
 
 static bool close_enough(const f32_t *z, const f32_t *a)
 {
     f32_t error;
     
-    divide_f32(&error, z, a);
+    if (a->mantissa != 0)
+    {
+        divide_f32(&error, z, a);       /* Proportional error */
+    }
+    else
+    {
+        error = *z;                     /* Absolute error if answer is zero */
+    }
     iadd_f32(&error, &error, -1);
     abs_f32(&error, &error);
     
     return is_ge_f32(&max_error, &error);
 }
 
-static void check_answer_ff(f32_t *x, f32_t *y, f32_t *z, f32_t *a, const char *op)
+static void check_answer_fff(f32_t *x, f32_t *y, f32_t *z, f32_t *a, const char *op)
 {
     bool pass;
     
     pass = close_enough(z, a);
     
-    dprintf("%09f %s %09f = %09f, should be %09f, %s\n", x, op, y, z, a, pass ? "PASS" : "FAIL");
+    dprintf("%s %09f %s %09f = %09f, should be %09f\n", pass ? "PASS" : "FAIL", x, op, y, z, a);
     sleep(10);
 }
 
-static void check_answer_fi(f32_t *x, int32_t iy, f32_t *z, f32_t *a, const char *op)
+static void check_answer_ffb(f32_t *x, f32_t *y, bool z, bool a, const char *op)
+{
+    bool pass;
+    
+    pass = z == a;
+    
+    dprintf("%s %09f %s %09f = %s, should be %s\n", pass ? "PASS" : "FAIL", x, op, y,
+            z ? "T" : "F", a ? "T" : "F");
+    sleep(10);
+}
+
+static void check_answer_fif(f32_t *x, int32_t iy, f32_t *z, f32_t *a, const char *op)
 {
     bool pass;
     
     pass = close_enough(z, a);
     
-    dprintf("%09f %s %d = %09f, should be %09f, %s\n", x, op, iy, z, a, pass ? "PASS" : "FAIL");
+    dprintf("%s %09f %s %d = %09f, should be %09f\n", pass ? "PASS" : "FAIL", x, op, iy, z, a);
+    sleep(10);
+}
+
+static void check_answer_ff(f32_t *x, f32_t *z, f32_t *a, const char *op)
+{
+    bool pass;
+    
+    pass = close_enough(z, a);
+    
+    dprintf("%s %s %09f = %09f, should be %09f\n", pass ? "PASS" : "FAIL", op, x, z, a);
     sleep(10);
 }
 
@@ -700,15 +777,6 @@ void f32_test(void)
     f32_t x, y, z, a;
     int32_t iy;
 
-    static const struct ff_s test_ff[] = 
-    {
-        {1.23456e-6, 1e10, 12345.6, 1.23456e-16, 1e10, -1e10},
-    };
-    static const struct fi_s test_fi[] =
-    {
-        {1.23456e+6, 1000000000, 1.23456e15, 1.23456e-3, 1001234560, -998765440},
-    };
-    
     for (i = 0; i < sizeof(test_ff) / sizeof(test_ff[0]); ++i)
     {
         get_f32_from_float(&x, test_ff[i].x);
@@ -716,19 +784,32 @@ void f32_test(void)
 
         multiply_f32(&z, &x, &y);
         get_f32_from_float(&a, test_ff[i].x_times_y);
-        check_answer_ff(&x, &y, &z, &a, "x");
+        check_answer_fff(&x, &y, &z, &a, "x");
+        multiply_f32(&z, &y, &x);
+        check_answer_fff(&y, &x, &z, &a, "x");
 
         divide_f32(&z, &x, &y);
         get_f32_from_float(&a, test_ff[i].x_over_y);
-        check_answer_ff(&x, &y, &z, &a, "/");
+        check_answer_fff(&x, &y, &z, &a, "/");
+        divide_f32(&z, &y, &x);
+        get_f32_from_float(&a, test_ff[i].y_over_x);
+        check_answer_fff(&y, &x, &z, &a, "/");
 
         add_f32(&z, &x, &y);
         get_f32_from_float(&a, test_ff[i].x_plus_y);
-        check_answer_ff(&x, &y, &z, &a, "+");
+        check_answer_fff(&x, &y, &z, &a, "+");
+        add_f32(&z, &y, &x);
+        check_answer_fff(&y, &x, &z, &a, "+");
 
         subtract_f32(&z, &x, &y);
         get_f32_from_float(&a, test_ff[i].x_minus_y);
-        check_answer_ff(&x, &y, &z, &a, "-");
+        check_answer_fff(&x, &y, &z, &a, "-");
+        subtract_f32(&z, &y, &x);
+        get_f32_from_float(&a, test_ff[i].y_minus_x);
+        check_answer_fff(&y, &x, &z, &a, "-");
+        
+        check_answer_ffb(&x, &y, is_ge_f32(&x, &y), test_ff[i].x_ge_y, ">=");
+        check_answer_ffb(&y, &x, is_ge_f32(&y, &x), test_ff[i].y_ge_x, ">=");
     }
 
     for (i = 0; i < sizeof(test_fi) / sizeof(test_fi[0]); ++i)
@@ -738,19 +819,27 @@ void f32_test(void)
 
         imultiply_f32(&z, &x, iy);
         get_f32_from_float(&a, test_fi[i].x_times_y);
-        check_answer_fi(&x, iy, &z, &a, "x");
+        check_answer_fif(&x, iy, &z, &a, "x");
 
         idivide_f32(&z, &x, iy);
         get_f32_from_float(&a, test_fi[i].x_over_y);
-        check_answer_fi(&x, iy, &z, &a, "/");
+        check_answer_fif(&x, iy, &z, &a, "/");
 
         iadd_f32(&z, &x, iy);
         get_f32_from_float(&a, test_fi[i].x_plus_y);
-        check_answer_fi(&x, iy, &z, &a, "+");
+        check_answer_fif(&x, iy, &z, &a, "+");
 
         iadd_f32(&z, &x, -iy);
         get_f32_from_float(&a, test_fi[i].x_minus_y);
-        check_answer_fi(&x, iy, &z, &a, "-");
+        check_answer_fif(&x, iy, &z, &a, "-");
+    }
+    
+    for (i = 0; i < sizeof(test_cosine) / sizeof(test_cosine[0]); ++i)
+    {
+        get_f32_from_float(&x, test_cosine[i].x);
+        cosine_f32(&z, &x);
+        get_f32_from_float(&a, test_cosine[i].answer);
+        check_answer_ff(&x, &z, &a, "cosine");
     }
 }
 #endif /* INCLUDE_F32_TESTS */
