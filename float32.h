@@ -118,6 +118,8 @@ static __inline int is_negative_f32(const f32_t *a)
 
 extern void f32_test(void);
 
-extern const f32_t pi, half_pi, quarter_pi, two_pi, one_third_pi, two_thirds_pi, one_sixth_pi;
+extern const f32_t plus_zero, minus_zero, plus_infinity, minus_infinity,
+                   pi, half_pi, quarter_pi, two_pi, one_third_pi, two_thirds_pi, one_sixth_pi,
+                   root_2, half_root_2, root_3, half_root_3;
 
 #endif /* FLOAT32_H_ */

@@ -18,13 +18,21 @@
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 
-const f32_t pi            = {3373259426UL, -30, +1};
-const f32_t half_pi       = {3373259426UL, -31, +1};
-const f32_t quarter_pi    = {3373259426UL, -32, +1};
-const f32_t two_pi        = {3373259426UL, -29, +1};
-const f32_t one_third_pi  = {2248839617UL, -31, +1};
-const f32_t two_thirds_pi = {2248839617UL, -30, +1};
-const f32_t one_sixth_pi  = {2248839617UL, -32, +1};
+const f32_t plus_zero      = {0UL, INT8_MIN, +1};
+const f32_t minus_zero     = {0UL, INT8_MIN, -1};
+const f32_t plus_infinity  = {INT32_MAX, INT8_MAX, +1};
+const f32_t minus_infinity = {INT32_MAX, INT8_MAX, -1};
+const f32_t pi             = {3373259426UL, -30, +1};
+const f32_t half_pi        = {3373259426UL, -31, +1};
+const f32_t quarter_pi     = {3373259426UL, -32, +1};
+const f32_t two_pi         = {3373259426UL, -29, +1};
+const f32_t one_third_pi   = {2248839617UL, -31, +1};
+const f32_t two_thirds_pi  = {2248839617UL, -30, +1};
+const f32_t one_sixth_pi   = {2248839617UL, -32, +1};
+const f32_t root_2         = {3037000500UL, -31, +1};
+const f32_t half_root_2    = {3037000500UL, -32, +1};
+const f32_t root_3         = {3719550787UL, -31, +1};
+const f32_t half_root_3    = {3719550787UL, -32, +1};
 
 int _print_integer(char *buffer, uint32_t integer, bool plus_sign, bool negative)
 {
@@ -100,20 +108,6 @@ int sprint_f32(char *buffer, const f32_t *a, int decimal_places, bool plus, bool
     uint32_t fraction;
     bool scientific, negative;
 
-    if (a->signum < 0)
-    {
-        buffer[len] = '-';
-        ++len;
-    }
-    else
-    {
-        if (plus)
-        {
-            buffer[len] = '+';
-            ++len;
-        }
-    }
-    
     if (a->mantissa != 0 && (a->exponent > 0 || a->exponent < -64))
     {
         /* Big/small number, print in exponent notation */
@@ -461,7 +455,7 @@ static void _add_or_subtract_f32(f32_t *ret, const f32_t *a, const f32_t *b, int
      *   answer = value1 +/- value2
      * where we know that value1 is larger
      */
-    if (a->exponent >= b->exponent || (a->exponent == b->exponent && a->mantissa >= b->mantissa))
+    if (a->exponent > b->exponent || (a->exponent == b->exponent && a->mantissa >= b->mantissa))
     {
         /* a is bigger, use a as value1 and b as value2 */
         mantissa1  = a->mantissa;
@@ -571,8 +565,7 @@ void cosine_f32(f32_t *ret, const f32_t *a)
     /* Trim off any negative answers, since this is due to inaccuracy */
     if (is_negative_f32(ret))
     {
-        ret->signum   = 1;
-        ret->mantissa = 0;
+        *ret = plus_zero;
     }
 }
 
@@ -707,7 +700,13 @@ static const struct fi_s test_fi[] =
 static const struct f_s test_cosine[] = 
 {
     /* x         cosine(x) */
-    {0.0,          1.0},
+    { 0.0,         1.0},
+    {-0.0,         1.0},
+    { 1.5707963,   0.0},
+    {-1.5707963,   0.0},
+    { 0.785398163, 0.70710678},
+    {-0.785398163, 0.70710678},
+    {0.00001,      0.9999999999},
 };
 
 static const f32_t max_error = {0x80000000, -54, 1};
@@ -719,12 +718,12 @@ static bool close_enough(const f32_t *z, const f32_t *a)
     if (a->mantissa != 0)
     {
         divide_f32(&error, z, a);       /* Proportional error */
+        iadd_f32(&error, &error, -1);
     }
     else
     {
         error = *z;                     /* Absolute error if answer is zero */
     }
-    iadd_f32(&error, &error, -1);
     abs_f32(&error, &error);
     
     return is_ge_f32(&max_error, &error);
@@ -736,7 +735,7 @@ static void check_answer_fff(f32_t *x, f32_t *y, f32_t *z, f32_t *a, const char 
     
     pass = close_enough(z, a);
     
-    dprintf("%s %09f %s %09f = %09f, should be %09f\n", pass ? "PASS" : "FAIL", x, op, y, z, a);
+    dprintf("%s %09f %s %09f = %09f, should be %09f\n", pass ? " PASS" : "*FAIL", x, op, y, z, a);
     sleep(10);
 }
 
@@ -746,7 +745,7 @@ static void check_answer_ffb(f32_t *x, f32_t *y, bool z, bool a, const char *op)
     
     pass = z == a;
     
-    dprintf("%s %09f %s %09f = %s, should be %s\n", pass ? "PASS" : "FAIL", x, op, y,
+    dprintf("%s %09f %s %09f = %s, should be %s\n", pass ? " PASS" : "*FAIL", x, op, y,
             z ? "T" : "F", a ? "T" : "F");
     sleep(10);
 }
@@ -757,7 +756,7 @@ static void check_answer_fif(f32_t *x, int32_t iy, f32_t *z, f32_t *a, const cha
     
     pass = close_enough(z, a);
     
-    dprintf("%s %09f %s %d = %09f, should be %09f\n", pass ? "PASS" : "FAIL", x, op, iy, z, a);
+    dprintf("%s %09f %s %d = %09f, should be %09f\n", pass ? " PASS" : "*FAIL", x, op, iy, z, a);
     sleep(10);
 }
 
@@ -767,7 +766,7 @@ static void check_answer_ff(f32_t *x, f32_t *z, f32_t *a, const char *op)
     
     pass = close_enough(z, a);
     
-    dprintf("%s %s %09f = %09f, should be %09f\n", pass ? "PASS" : "FAIL", op, x, z, a);
+    dprintf("%s %s %09f = %09f, should be %09f\n", pass ? " PASS" : "*FAIL", op, x, z, a);
     sleep(10);
 }
 
