@@ -600,7 +600,7 @@ void square_root_f32(f32_t *ret, const f32_t *a)
         }
     }
     ret->mantissa = acc;
-    ret->exponent = exponent >> 1;
+    ret->exponent = (exponent >> 1) - 16;
     normalise_f32(ret);
 }
 
@@ -689,13 +689,18 @@ struct f_s
 
 static const struct ff_s test_ff[] = 
 {
-    /*   x        y      x*y      x/y            y/x         x+y     x-y   y-x   x>=y    y>=x */
-    {1.23456e-6, 1e10, 12345.6, 1.23456e-16,  8.10005184e15, 1e10, -1e10, 1e10, false, true},
+    /*  x           y             x*y       x/y            y/x           x+y         x-y           y-x          x>=y    y>=x */
+    { 1.23456e-6, 1e10,        12345.6,     1.23456e-16,  8.10005184e15, 1e10,       -1e10,        1e10,       false, true },
+    { 3.33333333, 1.11111111,  3.70370369,  3.0,          0.33333333,    4.44444444,  2.22222222, -2.22222222, true,  false},
+    { 3.33333333, 3.33333333,  11.1111111,  1.0,          1.0,           6.66666666,  0.0,         0.0,        true,  true },
+    {-3.33333333, 1.11111111, -3.70370369, -3.0,         -0.33333333,   -2.22222222, -4.44444444,  4.44444444, false, true },
+    {-3.33333333, 3.33333333, -11.1111111, -1.0,         -1.0,           0.0,        -6.66666666,  6.66666666, false, true },
 };
 static const struct fi_s test_fi[] =
 {
-    /*   x          y         x*y         x/y            x+y          x-y    */
-    {1.23456e+6, 1000000000, 1.23456e15, 1.23456e-3,   1001234560, -998765440},
+    /*   x          y         x*y            x/y             x+y            x-y    */
+    {1.23456e+6, 1000000000, 1.23456e15,    1.23456e-3,     1001234560,   -998765440   },
+    {3.33333333, 1000000000, 3.33333333e+9, 3.33333333e-9,  1000000003.3, -1000000003.3},
 };
 static const struct f_s test_cosine[] = 
 {
@@ -707,6 +712,14 @@ static const struct f_s test_cosine[] =
     { 0.785398163, 0.70710678},
     {-0.785398163, 0.70710678},
     {0.00001,      0.9999999999},
+};
+
+static const struct f_s test_square_root[] = 
+{
+    /* x           square_root(x) */
+    { 25600.0,     160.0        },
+    {9.876543e+15, 99380797.9   },
+    {9.876543e-15, 9.93807979e-8},
 };
 
 static const f32_t max_error = {0x80000000, -54, 1};
@@ -839,6 +852,14 @@ void f32_test(void)
         cosine_f32(&z, &x);
         get_f32_from_float(&a, test_cosine[i].answer);
         check_answer_ff(&x, &z, &a, "cosine");
+    }
+
+    for (i = 0; i < sizeof(test_square_root) / sizeof(test_square_root[0]); ++i)
+    {
+        get_f32_from_float(&x, test_square_root[i].x);
+        square_root_f32(&z, &x);
+        get_f32_from_float(&a, test_square_root[i].answer);
+        check_answer_ff(&x, &z, &a, "square_root");
     }
 }
 #endif /* INCLUDE_F32_TESTS */
