@@ -14,6 +14,8 @@
 #define GET_LPUART_BRR_VALUE(UART_CLOCK, BAUDRATE)  (((UART_CLOCK * 16) + (BAUDRATE / 32)) / (BAUDRATE / 16))
 #define GET_USART_BRR_VALUE(UART_CLOCK, BAUDRATE)   (((UART_CLOCK) + (BAUDRATE / 2)) / (BAUDRATE))
 
+#define TICKS_PER_SECOND            100
+
 task_t task1, task2, task3, task4;
 uint32_t task1_stack[128] __ALIGNED(8);
 uint32_t task2_stack[128] __ALIGNED(8);
@@ -22,6 +24,8 @@ uint32_t task4_stack[128] __ALIGNED(8);
 
 DECLARE_QUEUE(queue1, 6);
 DECLARE_QUEUE(lpuart_outq, 101);
+
+volatile bool safe_to_stop = true;
 
 void task1_main(void *arg)
 {
@@ -188,7 +192,7 @@ void LPTIM1_IRQHandler(void)
 }
 
 /*
- * Configure the timer to tick at 1000Hz
+ * Configure the tick timer
  * NVIC stuff (interrupt priority and enable) is done in start_rtos().
  */
 void init_lptim(unsigned clocks_per_tick)
@@ -199,12 +203,73 @@ void init_lptim(unsigned clocks_per_tick)
     DBGMCU->APB1FZ |= DBGMCU_APB1_FZ_DBG_LPTIMER_STOP;
 #endif
     
-    LL_RCC_SetLPTIMClockSource(LL_RCC_LPTIM1_CLKSOURCE_PCLK1);
+    LL_RCC_SetLPTIMClockSource(LL_RCC_LPTIM1_CLKSOURCE_LSI);
     RCC->APB1ENR |= RCC_APB1ENR_LPTIM1EN;
     LPTIM1->IER = LPTIM_IER_ARRMIE;
     LPTIM1->CR  = LPTIM_CR_ENABLE;
     LPTIM1->ARR = (LPTIM1->ARR & 0xffff0000) | clocks_per_tick;
     LPTIM1->CR |= LPTIM_CR_CNTSTRT;
+}
+
+void init_low_power(void)
+{
+    /* Enable the clock to the power controller */
+    RCC->APB1ENR |= RCC_APB1ENR_PWREN;
+    
+    /*
+     * We also set LPDSR here, despite the Errata ("STM32L031x4/6 silicon limitations") 
+     * because DBGMCU->IDCODE shows we have (at least) revision X parts.
+     */
+    PWR->CR |= PWR_CR_LPSDSR;
+    
+    /* Wake from Stop using HSI clock */
+    LL_RCC_SetClkAfterWakeFromStop(LL_RCC_STOP_WAKEUPCLOCK_HSI);
+}
+
+void idle_low_power_hook(void)
+{
+    /* First a quick check without masking interrupts, so we don't upset the realtime stuff */
+    if (safe_to_stop)
+    {
+        __disable_irq();
+        /* Now re-check with interrupts masked, before we finally decide to enter Stop mode */
+        if (safe_to_stop)
+        {
+            /* Disable the ADC */
+            //ADC1->CR |= ADC_CR_ADDIS;
+            /* Set the M0 to go into Deep Sleep */
+            SCB->SCR |= SCB_SCR_SLEEPDEEP_Msk;
+            /* Disable everything we can, and wake up fast */
+            PWR->CR |= PWR_CR_ULP | PWR_CR_FWU;
+            __DSB();
+            __WFI();
+            PWR->CR &= ~(PWR_CR_ULP | PWR_CR_FWU);
+            SCB->SCR &= ~SCB_SCR_SLEEPDEEP_Msk;
+            /* Enable the ADC */
+            //ADC1->CR |= ADC_CR_ADEN;
+            
+#if SYS_CLOCK_HZ == 32000000            
+            /* Re-configure and enable the PLL at 32MHz (HSI x 4 / 2) */
+            LL_RCC_PLL_ConfigDomain_SYS(LL_RCC_PLLSOURCE_HSI, RCC_CFGR_PLLMUL4, RCC_CFGR_PLLDIV2);
+            LL_RCC_PLL_Enable();
+            while (!LL_RCC_PLL_IsReady())
+            {
+                /* Wait for PLL to be ready */
+            }
+            /* Switch SysClk over to the 32MHz PLL output */
+            LL_RCC_SetSysClkSource(LL_RCC_SYS_CLKSOURCE_PLL);
+            while (LL_RCC_GetSysClkSource() != LL_RCC_SYS_CLKSOURCE_STATUS_PLL)
+            {
+                /* Wait for system clock to switch to PLL */
+            }
+#endif
+        }
+        __enable_irq();
+    }
+    else
+    {
+        __WFI();
+    }
 }
 
 int outbyte(int c)
@@ -227,6 +292,7 @@ void __NO_RETURN main(void)
     /* Enable prefetch (but not pre-read unless you're doing lots of queueing) */
     FLASH->ACR |= FLASH_ACR_PRFTEN;
 
+    init_low_power();
     init_lpuart1();
     //init_usart2();
 
@@ -235,8 +301,8 @@ void __NO_RETURN main(void)
     add_task(task2_main, &task2, task2_stack, sizeof(task2_stack) / 4, 1);
     add_task(task1_main, &task1, task1_stack, sizeof(task1_stack) / 4, 0);
     
-    init_lptim(32000);
-    start_rtos(32000);
+    init_lptim(37000 / TICKS_PER_SECOND);
+    start_rtos();
     
     while(1)
     {

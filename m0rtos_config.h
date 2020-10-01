@@ -19,6 +19,10 @@
 #define MID_IRQ_PRIORITY    1u
 #define HIGH_IRQ_PRIORITY   0u
 
-#define REALTIME_IRQS       0x04000000
+/* Set TIM22 to be a real-time non-M0rtos interrupt */
+#define REALTIME_IRQS       0x00400000
+
+/* Set UARTs to be lower priority (IRQs 28 and 29) */
+#define LOW_PRIO_IRQS       0x30000000 
 
 #define NUM_TASK_PRIOS      4

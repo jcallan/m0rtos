@@ -209,7 +209,7 @@ bool read_queue(queue_t *q, uint8_t *buf, unsigned amount, int ticks_to_wait)
         {
             for (i = 0; i < amount; ++i)
             {
-                buf[i] = q->data[q->out];
+                buf[i] = q->bytes[q->out];
                 ++q->out;
                 if (q->out >= q->max)
                 {
@@ -267,7 +267,7 @@ bool read_queue_irq(queue_t *q, uint8_t *buf, unsigned amount)
     {
         for (i = 0; i < amount; ++i)
         {
-            buf[i] = q->data[q->out];
+            buf[i] = q->bytes[q->out];
             ++q->out;
             if (q->out >= q->max)
             {
@@ -316,7 +316,7 @@ bool write_queue(queue_t *q, const uint8_t *buf, unsigned amount, int ticks_to_w
         {
             for (i = 0; i < amount; ++i)
             {
-                q->data[q->in] = buf[i];
+                q->bytes[q->in] = buf[i];
                 ++q->in;
                 if (q->in >= q->max)
                 {
@@ -373,7 +373,7 @@ bool write_queue_irq(queue_t *q, const uint8_t *buf, unsigned amount)
     {
         for (i = 0; i < amount; ++i)
         {
-            q->data[q->in] = buf[i];
+            q->bytes[q->in] = buf[i];
             ++q->in;
             if (q->in >= q->max)
             {
@@ -613,7 +613,14 @@ __NO_RETURN void idle_task_function(void *arg)
     {
         /* spin */
         yield();
-        __WFI();
+        if (idle_low_power_hook)
+        {
+            idle_low_power_hook();
+        }
+        else
+        {
+            __WFI();
+        }
     }
 }
 
@@ -629,8 +636,11 @@ __ASM void start_idle_task(uint32_t *idle_sp)
     bl idle_task_function
 }
 
-void __NO_RETURN start_rtos(uint32_t cpu_clocks_per_tick)
+void __NO_RETURN start_rtos(void)
 {
+    unsigned i;
+    uint32_t priority;
+    
     __disable_irq();
     
     /* Create the idle task */
@@ -639,12 +649,32 @@ void __NO_RETURN start_rtos(uint32_t cpu_clocks_per_tick)
     /* The idle task starts with an empty stack, as we call it directly */
     idle_task.sp = idle_task_stack + sizeof(idle_task_stack) / 4;
 
-    /* Enable the yield interrupt, set it to the lowest priority */
-    NVIC->IP[YIELD_PRIO_REG] |= YIELD_PRIO;
+    /* Set interrupt priorities based on the bitmaps REALTIME_IRQS and LOW_PRIO_IRQS */
+    for (i = 0; i < 32; ++i)
+    {
+        if (i == YIELD_IRQ || i == TICK_IRQ)
+        {
+            priority = SYS_IRQ_PRIORITY;
+        }
+        else if (REALTIME_IRQS & (1u << i))
+        {
+            priority = HIGH_IRQ_PRIORITY;
+        }
+        else if (LOW_PRIO_IRQS & (1u << i))
+        {
+            priority = LOW_IRQ_PRIORITY;
+        }
+        else
+        {
+            priority = MID_IRQ_PRIORITY;
+        }
+        NVIC_SetPriority((IRQn_Type)i, priority);
+    }
+    
+    /* Enable the yield and tick interrupts */
     NVIC->ISER[0] = YIELD_BIT;
-    /* Enable the timer interrupt, set it to the lowest priority */
-    NVIC->IP[TICK_PRIO_REG] |= TICK_PRIO;
     NVIC->ISER[0] = TICK_BIT;
+
     /* Pend the interrupt that will yield to first ready task */
     yield();
     start_idle_task(idle_task.sp);

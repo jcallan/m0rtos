@@ -27,7 +27,7 @@ struct task_s
 struct queue_s
 {
     unsigned in, out, max;
-    uint8_t *data;
+    uint8_t *bytes;
     struct task_s *blocked_list;
 };
 
@@ -55,9 +55,11 @@ extern void sleep_until(uint32_t target_ticks);
 
 extern int add_task(task_function_t *task_function, task_t *task, uint32_t *stack,
                     unsigned stack_words, unsigned priority);
-extern __NO_RETURN void start_rtos(uint32_t cpu_clocks_per_tick);
+extern __NO_RETURN void start_rtos(void);
 extern void yield(void);
 extern void wake_task_realtime(task_t *task);
 extern void tick(void);
+
+extern void idle_low_power_hook(void) __attribute__((weak)) __attribute__((used));
 
 #endif
